@@ -65,6 +65,11 @@ SRCS := $(SRC_DIR)/error.c \
         $(SRC_DIR)/stats.c \
         $(SRC_DIR)/arena.c \
         $(SRC_DIR)/memory.c \
+        $(SRC_DIR)/weighted.c \
+        $(SRC_DIR)/context.c \
+        $(SRC_DIR)/temporal.c \
+        $(SRC_DIR)/exploration.c \
+        $(SRC_DIR)/synthesis.c \
         $(SRC_DIR)/internal.c
 
 # Object files
@@ -80,7 +85,8 @@ EXAMPLES := $(BUILD_DIR)/sphere_function \
             $(BUILD_DIR)/meta_demo \
             $(BUILD_DIR)/gpu_benchmark \
             $(BUILD_DIR)/checkpoint_demo \
-            $(BUILD_DIR)/monitoring_demo
+            $(BUILD_DIR)/monitoring_demo \
+            $(BUILD_DIR)/organic_learning_demo
 
 # Tests
 TESTS := $(BUILD_DIR)/test_genome \
@@ -91,6 +97,11 @@ TESTS := $(BUILD_DIR)/test_genome \
          $(BUILD_DIR)/test_gpu \
          $(BUILD_DIR)/test_persist \
          $(BUILD_DIR)/test_stats \
+         $(BUILD_DIR)/test_weighted \
+         $(BUILD_DIR)/test_context \
+         $(BUILD_DIR)/test_temporal \
+         $(BUILD_DIR)/test_exploration \
+         $(BUILD_DIR)/test_synthesis \
          $(BUILD_DIR)/test_integration \
          $(BUILD_DIR)/test_performance_bench
 
@@ -151,6 +162,9 @@ $(BUILD_DIR)/checkpoint_demo: $(EXAMPLE_DIR)/checkpoint_demo.c $(LIB)
 
 $(BUILD_DIR)/monitoring_demo: $(EXAMPLE_DIR)/monitoring_demo.c $(LIB)
 	$(CC) $(CFLAGS) $(INCLUDES) $< -L$(BUILD_DIR) -levocore $(LDFLAGS) -o $@
+
+$(BUILD_DIR)/organic_learning_demo: $(EXAMPLE_DIR)/organic_learning_demo.c $(LIB)
+	$(CC) $(CFLAGS) $(INCLUDES) $< -L$(BUILD_DIR) -levocore $(LDFLAGS) -o $@ -lm
 
 # Build tests
 .PHONY: tests

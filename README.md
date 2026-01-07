@@ -1,9 +1,9 @@
 # Evocore - Meta-Evolutionary Framework
 
-**Version:** 0.4.0
+**Version:** 1.0.0
 **Language:** C99
 
-A domain-agnostic meta-evolutionary framework for evolutionary computation research and optimization.
+A domain-agnostic meta-evolutionary framework for evolutionary computation research and optimization with organic learning capabilities.
 
 ## Overview
 
@@ -13,17 +13,25 @@ Evocore provides a flexible foundation for building evolutionary algorithms that
 - **Pure C** - No external dependencies, maximum portability
 - **Extensible** - Clean separation between framework and domain logic
 - **High Performance** - Multi-threaded CPU evaluation and GPU acceleration via CUDA
-- **Production Ready** - Checkpointing, monitoring, persistence, and deployment automation
+- **Full Featured** - Checkpointing, monitoring, persistence, and deployment automation
+- **Organic Learning** - Context-aware, temporal, and adaptive optimization strategies
 
 ## Features
 
+### Core Evolution
 - **Meta-Evolution**: Evolves evolutionary parameters (mutation rates, selection pressure, population size)
 - **GPU Acceleration**: CUDA kernels for parallel fitness evaluation
 - **Persistence**: JSON serialization for genomes, populations, and meta-populations
 - **Checkpointing**: Auto-save with compression and resume capability
 - **Monitoring**: Real-time statistics, convergence detection, stagnation alerts
 - **Memory Optimization**: Arena allocators and memory pools for efficient bulk allocation
-- **Production Deployment**: Docker support, installation scripts, health checks
+
+### Organic Learning (New in 1.0.0)
+- **Weighted Statistics**: Fitness-weighted statistical learning with variance tracking
+- **Context Learning**: Multi-dimensional context awareness for domain adaptation
+- **Temporal Learning**: Time-bucketed learning with regime change detection
+- **Exploration Control**: Adaptive strategies (Fixed, Decay, Adaptive, UCB1, Boltzmann)
+- **Parameter Synthesis**: Cross-context knowledge transfer (Average, Weighted, Trend, Regime, Ensemble)
 
 ## Building
 
@@ -69,6 +77,7 @@ evocore/
 │   ├── evocore.h            # Main umbrella header
 │   ├── genome.h             # Genome abstraction
 │   ├── population.h         # Population management
+│   ├── domain.h             # Domain interface
 │   ├── meta.h               # Meta-evolution layer
 │   ├── gpu.h                # GPU acceleration
 │   ├── persist.h            # Serialization & checkpointing
@@ -76,11 +85,24 @@ evocore/
 │   ├── memory.h             # Memory management API
 │   ├── arena.h              # Arena allocator
 │   ├── config.h             # INI configuration
-│   └── error.h              # Error handling
+│   ├── error.h              # Error handling
+│   ├── weighted.h           # Weighted statistics (NEW)
+│   ├── context.h            # Context learning (NEW)
+│   ├── temporal.h           # Temporal learning (NEW)
+│   ├── exploration.h        # Exploration control (NEW)
+│   ├── synthesis.h          # Parameter synthesis (NEW)
+│   ├── fitness.h            # Fitness interface
+│   ├── optimize.h           # Optimization utilities
+│   └── log.h                # Logging system
 ├── src/                     # Implementation
 │   ├── cuda/                # CUDA kernels
 │   ├── arena.c              # Arena allocator
 │   ├── memory.c             # Memory tracking
+│   ├── weighted.c           # Weighted statistics (NEW)
+│   ├── context.c            # Context learning (NEW)
+│   ├── temporal.c           # Temporal learning (NEW)
+│   ├── exploration.c        # Exploration control (NEW)
+│   ├── synthesis.c          # Parameter synthesis (NEW)
 │   └── ...
 ├── examples/                # Example programs
 │   ├── sphere_function.c    # Sphere function optimization
@@ -89,14 +111,27 @@ evocore/
 │   ├── meta_demo.c          # Meta-evolution demo
 │   ├── gpu_benchmark.c      # GPU performance benchmark
 │   ├── checkpoint_demo.c    # Checkpoint/save-resume demo
-│   └── monitoring_demo.c    # Statistics monitoring demo
+│   ├── monitoring_demo.c    # Statistics monitoring demo
+│   └── organic_learning_demo.c  # Organic learning demo (NEW)
 ├── tests/                   # Test programs
+│   ├── test_genome.c        # Genome tests (15)
+│   ├── test_population.c    # Population tests (10)
+│   ├── test_config.c        # Configuration tests (11)
+│   ├── test_domain.c        # Domain tests (16)
+│   ├── test_meta.c          # Meta-evolution tests (19)
+│   ├── test_gpu.c           # GPU tests (18)
+│   ├── test_persist.c       # Persistence tests (8)
+│   ├── test_stats.c         # Statistics tests (11)
+│   ├── test_weighted.c      # Weighted stats tests (15)
+│   ├── test_context.c       # Context learning tests (10)
+│   ├── test_temporal.c      # Temporal learning tests (11)
+│   ├── test_exploration.c   # Exploration tests (16)
+│   ├── test_synthesis.c     # Synthesis tests (15)
+│   └── test_integration.c   # Integration tests (7)
 ├── deployment/              # Production deployment
 │   ├── scripts/            # install, uninstall, health_check
 │   ├── docker/             # Dockerfile, docker-compose.yml
 │   └── configs/            # production.conf, logging.conf
-├── docs/                    # Documentation
-│   └── DEPLOYMENT.md        # Deployment guide
 ├── shell.nix                # Nix shell with CUDA dependencies
 └── Makefile
 ```
@@ -235,12 +270,14 @@ stagnation_threshold = 100
 ## Running Examples
 
 ```bash
-./build/sphere_function
-./build/trading_domain
-./build/meta_demo
-./build/gpu_benchmark
-./build/checkpoint_demo
-./build/monitoring_demo
+./build/sphere_function          # Sphere function optimization
+./build/trading_domain           # Trading strategy domain
+./build/tsp_domain               # Traveling salesman domain
+./build/meta_demo                # Meta-evolution demo
+./build/gpu_benchmark            # GPU performance benchmark
+./build/checkpoint_demo          # Checkpoint/save-resume demo
+./build/monitoring_demo          # Statistics monitoring demo
+./build/organic_learning_demo    # Organic learning capabilities (NEW)
 ```
 
 ## Deployment
@@ -258,8 +295,6 @@ cd deployment/docker
 docker-compose up evocore
 ```
 
-See `docs/DEPLOYMENT.md` for complete deployment documentation.
-
 ## API Documentation
 
 ### Core Types
@@ -273,6 +308,17 @@ See `docs/DEPLOYMENT.md` for complete deployment documentation.
 | `evocore_gpu_context_t` | GPU acceleration context |
 | `evocore_checkpoint_t` | Checkpoint data |
 
+### Organic Learning Types (New in 1.0.0)
+
+| Type | Description |
+|------|-------------|
+| `evocore_weighted_array_t` | Fitness-weighted statistics array |
+| `evocore_context_system_t` | Multi-dimensional context learning |
+| `evocore_temporal_system_t` | Time-bucketed temporal learning |
+| `evocore_exploration_t` | Exploration controller |
+| `evocore_bandit_t` | Multi-armed bandit |
+| `evocore_synthesis_request_t` | Parameter synthesis request |
+
 ### Key Functions
 
 | Function | Purpose |
@@ -284,6 +330,53 @@ See `docs/DEPLOYMENT.md` for complete deployment documentation.
 | `evocore_gpu_init()` | Initialize GPU context |
 | `evocore_checkpoint_save()` | Save checkpoint |
 | `evocore_meta_population_evolve()` | Evolve parameters |
+
+### Organic Learning Functions (New in 1.0.0)
+
+| Function | Purpose |
+|----------|---------|
+| `evocore_weighted_array_create()` | Create weighted statistics |
+| `evocore_weighted_array_update()` | Update with fitness-weighted value |
+| `evocore_weighted_array_get_variance()` | Get weighted variance |
+| `evocore_context_system_create()` | Create context learning system |
+| `evocore_context_learn()` | Learn from experience |
+| `evocore_context_sample()` | Sample from context distribution |
+| `evocore_temporal_create()` | Create temporal learning system |
+| `evocore_temporal_learn()` | Learn timestamped experience |
+| `evocore_temporal_get_organic_mean()` | Get unbiased temporal mean |
+| `evocore_temporal_get_trend()` | Detect parameter trends |
+| `evocore_temporal_detect_regime_change()` | Detect regime changes |
+| `evocore_exploration_create()` | Create exploration controller |
+| `evocore_exploration_update()` | Update exploration rate |
+| `evocore_exploration_should_explore()` | Decide to explore/exploit |
+| `evocore_bandit_create()` | Create multi-armed bandit |
+| `evocore_bandit_select_ucb()` | UCB1 selection |
+| `evocore_boltzmann_select()` | Boltzmann selection |
+| `evocore_synthesis_request_create()` | Create synthesis request |
+| `evocore_synthesis_execute()` | Execute parameter synthesis |
+| `evocore_param_distance()` | Calculate parameter distance |
+| `evocore_param_similarity()` | Calculate parameter similarity |
+
+### Exploration Strategies
+
+| Strategy | Description |
+|----------|-------------|
+| `EVOCORE_EXPLORE_FIXED` | Constant exploration rate |
+| `EVOCORE_EXPLORE_DECAY` | Exponential decay over generations |
+| `EVOCORE_EXPLORE_ADAPTIVE` | Adjusts based on recent performance |
+| `EVOCORE_EXPLORE_UCB1` | Upper Confidence Bound (bandit) |
+| `EVOCORE_EXPLORE_BOLTZMANN` | Simulated annealing |
+
+### Synthesis Strategies
+
+| Strategy | Description |
+|----------|-------------|
+| `EVOCORE_SYNTHESIS_AVERAGE` | Simple average of sources |
+| `EVOCORE_SYNTHESIS_WEIGHTED` | Weighted average by confidence |
+| `EVOCORE_SYNTHESIS_TREND` | Project based on detected trend |
+| `EVOCORE_SYNTHESIS_REGIME` | Select by fitness regime |
+| `EVOCORE_SYNTHESIS_ENSEMBLE` | Combine multiple methods |
+| `EVOCORE_SYNTHESIS_NEAREST` | Nearest neighbor in parameter space |
 
 ## Performance
 
@@ -301,17 +394,23 @@ make benchmark
 
 ## Development Status
 
-| Phase | Status |
-|-------|--------|
-| Phase 1: Foundation | ✅ Complete |
-| Phase 2: Domain System | ✅ Complete |
-| Phase 3: Meta-Evolution | ✅ Complete |
-| Phase 4: GPU Acceleration | ✅ Complete |
-| Phase 6: Memory Optimization | ✅ Complete |
-| Phase 7: Persistence | ✅ Complete |
-| Phase 8: Testing | ✅ Complete (102 tests passing) |
-| Phase 9: Monitoring | ✅ Complete |
-| Phase 10: Production | ✅ Complete |
+| Phase | Status | Tests |
+|-------|--------|-------|
+| Phase 1: Foundation | ✅ Complete | 15 tests |
+| Phase 2: Domain System | ✅ Complete | 10 tests |
+| Phase 3: Meta-Evolution | ✅ Complete | 19 tests |
+| Phase 4: GPU Acceleration | ✅ Complete | 18 tests |
+| Phase 5: Organic Learning | ✅ Complete | 67 tests |
+| ├─ Weighted Statistics | ✅ Complete | 15 tests |
+| ├─ Context Learning | ✅ Complete | 10 tests |
+| ├─ Temporal Learning | ✅ Complete | 11 tests |
+| ├─ Exploration Control | ✅ Complete | 16 tests |
+| └─ Parameter Synthesis | ✅ Complete | 15 tests |
+| Phase 6: Memory Optimization | ✅ Complete | - |
+| Phase 7: Persistence | ✅ Complete | 8 tests |
+| Phase 8: Testing | ✅ Complete | 7 tests (integration) |
+| Phase 9: Monitoring | ✅ Complete | 11 tests |
+| **Total** | **✅ Complete** | **169 tests passing** |
 
 ## License
 

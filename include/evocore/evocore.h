@@ -9,10 +9,10 @@
  */
 
 /* Version information */
-#define EVOCORE_VERSION_MAJOR 0
-#define EVOCORE_VERSION_MINOR 1
+#define EVOCORE_VERSION_MAJOR 1
+#define EVOCORE_VERSION_MINOR 0
 #define EVOCORE_VERSION_PATCH 0
-#define EVOCORE_VERSION_STRING "0.1.0"
+#define EVOCORE_VERSION_STRING "1.0.0"
 
 /* Core abstractions */
 #include "evocore/genome.h"
@@ -31,5 +31,14 @@
 #include "evocore/log.h"
 #include "evocore/persist.h"
 #include "evocore/stats.h"
+
+/* Memory & Statistics */
+#include "evocore/arena.h"
+#include "evocore/memory.h"
+#include "evocore/weighted.h"
+#include "evocore/context.h"
+#include "evocore/temporal.h"
+#include "evocore/exploration.h"
+#include "evocore/synthesis.h"
 
 #endif /* EVOCORE_H */
