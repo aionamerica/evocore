@@ -1,0 +1,78 @@
+# Build outputs
+build/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+
+# Executables
+sphere_function
+trading_domain
+tsp_domain
+meta_demo
+gpu_benchmark
+checkpoint_demo
+monitoring_demo
+test_*
+
+# Object files
+*.obj
+*.elf
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+
+# Core dumps
+core
+core.*
+
+# Dependency files
+*.d
+
+# gcov
+*.gcno
+*.gcda
+*.gcov
+coverage.info
+lcov/
+
+# Valgrind
+valgrind-*.log
+
+# Example config files with local modifications
+# (keep the .ini.example files)
+*.ini.local
+
+# Editor backup files
+*~
+\#*\#
