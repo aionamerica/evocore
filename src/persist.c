@@ -775,43 +775,110 @@ evocore_error_t evocore_meta_serialize(const evocore_meta_population_t *meta_pop
     }
 
     json_writer_t writer;
-    json_writer_init(&writer, 4096, opts.pretty_print);
+    json_writer_init(&writer, 8192, opts.pretty_print);
 
     json_write_object_start(&writer);
 
+    char val_buf[128];
+
+    /* Basic metadata */
     json_write_key(&writer, "count");
-    char count_buf[64];
-    snprintf(count_buf, sizeof(count_buf), "%d", meta_pop->count);
-    json_write_raw(&writer, count_buf);
+    snprintf(val_buf, sizeof(val_buf), "%d", meta_pop->count);
+    json_write_raw(&writer, val_buf);
     json_write_comma(&writer);
 
     json_write_key(&writer, "current_generation");
-    snprintf(count_buf, sizeof(count_buf), "%d", meta_pop->current_generation);
-    json_write_raw(&writer, count_buf);
+    snprintf(val_buf, sizeof(val_buf), "%d", meta_pop->current_generation);
+    json_write_raw(&writer, val_buf);
     json_write_comma(&writer);
 
-    /* Best parameters */
+    json_write_key(&writer, "best_meta_fitness");
+    snprintf(val_buf, sizeof(val_buf), "%.15g", meta_pop->best_meta_fitness);
+    json_write_raw(&writer, val_buf);
+    json_write_comma(&writer);
+
+    json_write_key(&writer, "initialized");
+    json_write_raw(&writer, meta_pop->initialized ? "true" : "false");
+    json_write_comma(&writer);
+
+    /* Best parameters - all 19 fields */
     json_write_key(&writer, "best_params");
     json_write_object_start(&writer);
 
-    json_write_key(&writer, "optimization_mutation_rate");
-    snprintf(count_buf, sizeof(count_buf), "%.6g", meta_pop->best_params.optimization_mutation_rate);
-    json_write_raw(&writer, count_buf);
-    json_write_comma(&writer);
+#define WRITE_PARAM(param) \
+    json_write_key(&writer, #param); \
+    snprintf(val_buf, sizeof(val_buf), "%.6g", meta_pop->best_params.param); \
+    json_write_raw(&writer, val_buf);
 
-    json_write_key(&writer, "variance_mutation_rate");
-    snprintf(count_buf, sizeof(count_buf), "%.6g", meta_pop->best_params.variance_mutation_rate);
-    json_write_raw(&writer, count_buf);
-    json_write_comma(&writer);
+    WRITE_PARAM(optimization_mutation_rate); json_write_comma(&writer);
+    WRITE_PARAM(variance_mutation_rate); json_write_comma(&writer);
+    WRITE_PARAM(experimentation_rate); json_write_comma(&writer);
+    WRITE_PARAM(elite_protection_ratio); json_write_comma(&writer);
+    WRITE_PARAM(culling_ratio); json_write_comma(&writer);
+    WRITE_PARAM(fitness_threshold_for_breeding); json_write_comma(&writer);
+    WRITE_PARAM(target_population_size); json_write_comma(&writer);
+    WRITE_PARAM(min_population_size); json_write_comma(&writer);
+    WRITE_PARAM(max_population_size); json_write_comma(&writer);
+    WRITE_PARAM(learning_rate); json_write_comma(&writer);
+    WRITE_PARAM(exploration_factor); json_write_comma(&writer);
+    WRITE_PARAM(confidence_threshold); json_write_comma(&writer);
+    WRITE_PARAM(profitable_optimization_ratio); json_write_comma(&writer);
+    WRITE_PARAM(profitable_random_ratio); json_write_comma(&writer);
+    WRITE_PARAM(losing_optimization_ratio); json_write_comma(&writer);
+    WRITE_PARAM(losing_random_ratio); json_write_comma(&writer);
+    WRITE_PARAM(meta_mutation_rate); json_write_comma(&writer);
+    WRITE_PARAM(meta_learning_rate); json_write_comma(&writer);
+    WRITE_PARAM(meta_convergence_threshold);
 
-    json_write_key(&writer, "experimentation_rate");
-    snprintf(count_buf, sizeof(count_buf), "%.6g", meta_pop->best_params.experimentation_rate);
-    json_write_raw(&writer, count_buf);
+#undef WRITE_PARAM
 
-    json_write_newline(&writer);
-    json_write_indent(&writer);
     json_write_object_end(&writer);
+    json_write_comma(&writer);
 
+    /* Individuals array */
+    json_write_key(&writer, "individuals");
+    json_write_array_start(&writer);
+
+    for (int i = 0; i < meta_pop->count; i++) {
+        const evocore_meta_individual_t *ind = &meta_pop->individuals[i];
+
+        json_write_object_start(&writer);
+
+        json_write_key(&writer, "meta_fitness");
+        snprintf(val_buf, sizeof(val_buf), "%.15g", ind->meta_fitness);
+        json_write_raw(&writer, val_buf);
+        json_write_comma(&writer);
+
+        json_write_key(&writer, "generation");
+        snprintf(val_buf, sizeof(val_buf), "%d", ind->generation);
+        json_write_raw(&writer, val_buf);
+        json_write_comma(&writer);
+
+        json_write_key(&writer, "history_size");
+        snprintf(val_buf, sizeof(val_buf), "%zu", ind->history_size);
+        json_write_raw(&writer, val_buf);
+        json_write_comma(&writer);
+
+        /* Fitness history */
+        json_write_key(&writer, "fitness_history");
+        json_write_array_start(&writer);
+        for (size_t j = 0; j < ind->history_size; j++) {
+            snprintf(val_buf, sizeof(val_buf), "%.15g", ind->fitness_history[j]);
+            json_write_raw(&writer, val_buf);
+            if (j < ind->history_size - 1) {
+                json_write_raw(&writer, ", ");
+            }
+        }
+        json_write_array_end(&writer);
+
+        json_write_object_end(&writer);
+
+        if (i < meta_pop->count - 1) {
+            json_write_comma(&writer);
+        }
+    }
+
+    json_write_array_end(&writer);
     json_write_newline(&writer);
     json_write_object_end(&writer);
 
@@ -821,14 +888,202 @@ evocore_error_t evocore_meta_serialize(const evocore_meta_population_t *meta_pop
     return EVOCORE_OK;
 }
 
+/*========================================================================
+ * JSON Parsing Helpers
+ *========================================================================*/
+
+static int parse_json_int(const char *json, const char *key, int default_val) {
+    char search[128];
+    snprintf(search, sizeof(search), "\"%s\":", key);
+    const char *ptr = strstr(json, search);
+    if (!ptr) return default_val;
+    ptr += strlen(search);
+    while (*ptr == ' ' || *ptr == '\t' || *ptr == '\n') ptr++;
+    int val = default_val;
+    sscanf(ptr, "%d", &val);
+    return val;
+}
+
+static double parse_json_double(const char *json, const char *key, double default_val) {
+    char search[128];
+    snprintf(search, sizeof(search), "\"%s\":", key);
+    const char *ptr = strstr(json, search);
+    if (!ptr) return default_val;
+    ptr += strlen(search);
+    while (*ptr == ' ' || *ptr == '\t' || *ptr == '\n') ptr++;
+    double val = default_val;
+    sscanf(ptr, "%lf", &val);
+    return val;
+}
+
+static bool parse_json_bool(const char *json, const char *key, bool default_val) {
+    char search[128];
+    snprintf(search, sizeof(search), "\"%s\":", key);
+    const char *ptr = strstr(json, search);
+    if (!ptr) return default_val;
+    ptr += strlen(search);
+    while (*ptr == ' ' || *ptr == '\t' || *ptr == '\n') ptr++;
+    if (strncmp(ptr, "true", 4) == 0) return true;
+    if (strncmp(ptr, "false", 5) == 0) return false;
+    return default_val;
+}
+
+/*========================================================================
+ * Meta-Evolution Deserialization
+ *========================================================================*/
+
 evocore_error_t evocore_meta_deserialize(const char *buffer,
                                       size_t buffer_size,
                                       evocore_meta_population_t *meta_pop) {
-    (void)buffer;
-    (void)buffer_size;
-    (void)meta_pop;
-    /* TODO: Implement meta-population deserialization */
-    return EVOCORE_ERR_NOT_IMPLEMENTED;
+    if (!buffer || !meta_pop) {
+        return EVOCORE_ERR_NULL_PTR;
+    }
+
+    (void)buffer_size;  /* Unused for JSON parsing */
+
+    /* Parse basic fields */
+    meta_pop->count = parse_json_int(buffer, "count", 0);
+    meta_pop->current_generation = parse_json_int(buffer, "current_generation", 0);
+    meta_pop->best_meta_fitness = parse_json_double(buffer, "best_meta_fitness", 0.0);
+    meta_pop->initialized = parse_json_bool(buffer, "initialized", false);
+
+    /* Find best_params object */
+    const char *best_params_ptr = strstr(buffer, "\"best_params\"");
+    if (best_params_ptr) {
+        /* Find the opening brace after best_params */
+        const char *params_start = strchr(best_params_ptr, '{');
+        if (params_start) {
+            /* Find matching closing brace (simple search) */
+            const char *params_end = strchr(params_start, '}');
+            if (params_end) {
+                /* Create a substring containing just the params object */
+                size_t params_len = params_end - params_start + 1;
+                char *params_str = (char*)evocore_malloc(params_len + 1);
+                if (params_str) {
+                    memcpy(params_str, params_start, params_len);
+                    params_str[params_len] = '\0';
+
+                    /* Parse all 19 parameters */
+                    meta_pop->best_params.optimization_mutation_rate =
+                        parse_json_double(params_str, "optimization_mutation_rate", 0.1);
+                    meta_pop->best_params.variance_mutation_rate =
+                        parse_json_double(params_str, "variance_mutation_rate", 0.2);
+                    meta_pop->best_params.experimentation_rate =
+                        parse_json_double(params_str, "experimentation_rate", 0.05);
+                    meta_pop->best_params.elite_protection_ratio =
+                        parse_json_double(params_str, "elite_protection_ratio", 0.1);
+                    meta_pop->best_params.culling_ratio =
+                        parse_json_double(params_str, "culling_ratio", 0.2);
+                    meta_pop->best_params.fitness_threshold_for_breeding =
+                        parse_json_double(params_str, "fitness_threshold_for_breeding", 0.0);
+                    meta_pop->best_params.target_population_size =
+                        (int)parse_json_double(params_str, "target_population_size", 100.0);
+                    meta_pop->best_params.min_population_size =
+                        (int)parse_json_double(params_str, "min_population_size", 10.0);
+                    meta_pop->best_params.max_population_size =
+                        (int)parse_json_double(params_str, "max_population_size", 1000.0);
+                    meta_pop->best_params.learning_rate =
+                        parse_json_double(params_str, "learning_rate", 0.1);
+                    meta_pop->best_params.exploration_factor =
+                        parse_json_double(params_str, "exploration_factor", 0.5);
+                    meta_pop->best_params.confidence_threshold =
+                        parse_json_double(params_str, "confidence_threshold", 0.5);
+                    meta_pop->best_params.profitable_optimization_ratio =
+                        parse_json_double(params_str, "profitable_optimization_ratio", 0.8);
+                    meta_pop->best_params.profitable_random_ratio =
+                        parse_json_double(params_str, "profitable_random_ratio", 0.05);
+                    meta_pop->best_params.losing_optimization_ratio =
+                        parse_json_double(params_str, "losing_optimization_ratio", 0.5);
+                    meta_pop->best_params.losing_random_ratio =
+                        parse_json_double(params_str, "losing_random_ratio", 0.2);
+                    meta_pop->best_params.meta_mutation_rate =
+                        parse_json_double(params_str, "meta_mutation_rate", 0.05);
+                    meta_pop->best_params.meta_learning_rate =
+                        parse_json_double(params_str, "meta_learning_rate", 0.1);
+                    meta_pop->best_params.meta_convergence_threshold =
+                        parse_json_double(params_str, "meta_convergence_threshold", 0.01);
+
+                    evocore_free(params_str);
+                }
+            }
+        }
+    }
+
+    /* Parse individuals array */
+    const char *individuals_ptr = strstr(buffer, "\"individuals\"");
+    if (individuals_ptr && meta_pop->count > 0) {
+        const char *array_start = strchr(individuals_ptr, '[');
+        if (array_start) {
+            /* Simple parsing for each individual */
+            for (int i = 0; i < meta_pop->count && i < EVOCORE_MAX_META_INDIVIDUALS; i++) {
+                evocore_meta_individual_t *ind = &meta_pop->individuals[i];
+
+                /* Find next object start */
+                const char *obj_start = strchr(array_start, '{');
+                if (!obj_start) break;
+                const char *obj_end = strchr(obj_start, '}');
+                if (!obj_end) break;
+
+                size_t obj_len = obj_end - obj_start + 1;
+                char *obj_str = (char*)evocore_malloc(obj_len + 1);
+                if (obj_str) {
+                    memcpy(obj_str, obj_start, obj_len);
+                    obj_str[obj_len] = '\0';
+
+                    ind->meta_fitness = parse_json_double(obj_str, "meta_fitness", 0.0);
+                    ind->generation = parse_json_int(obj_str, "generation", 0);
+                    ind->history_size = parse_json_int(obj_str, "history_size", 0);
+
+                    /* Parse fitness_history array */
+                    const char *hist_ptr = strstr(obj_str, "\"fitness_history\"");
+                    if (hist_ptr) {
+                        const char *hist_array = strchr(hist_ptr, '[');
+                        if (hist_array) {
+                            const char *hist_end = strchr(hist_array, ']');
+                            if (hist_end) {
+                                /* Count values */
+                                int hist_count = 0;
+                                for (const char *p = hist_array; p < hist_end; p++) {
+                                    if (*p == '-' || (*p >= '0' && *p <= '9')) {
+                                        /* Check if this is a new number (previous char wasn't digit/dot/minus) */
+                                        if (p == hist_array || !(p[-1] == '.' || (p[-1] >= '0' && p[-1] <= '9'))) {
+                                            hist_count++;
+                                        }
+                                    }
+                                }
+
+                                if (hist_count > 0 && hist_count < 10000) {
+                                    ind->history_capacity = hist_count;
+                                    ind->fitness_history = (double*)evocore_malloc(hist_count * sizeof(double));
+                                    if (ind->fitness_history) {
+                                        ind->history_size = 0;
+                                        const char *p = hist_array;
+                                        while (p < hist_end && ind->history_size < (size_t)hist_count) {
+                                            /* Skip to next number */
+                                            while (p < hist_end && *p != '-' && !(*p >= '0' && *p <= '9')) p++;
+                                            if (p >= hist_end) break;
+                                            double val = 0.0;
+                                            if (sscanf(p, "%lf", &val) == 1) {
+                                                ind->fitness_history[ind->history_size++] = val;
+                                            }
+                                            /* Skip past this number */
+                                            while (p < hist_end && (*p == '.' || (*p >= '0' && *p <= '9') || *p == '-' || *p == 'e' || *p == 'E' || *p == '+')) p++;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    evocore_free(obj_str);
+                }
+
+                array_start = obj_end + 1;
+            }
+        }
+    }
+
+    return EVOCORE_OK;
 }
 
 evocore_error_t evocore_meta_save(const evocore_meta_population_t *meta_pop,
@@ -865,10 +1120,44 @@ evocore_error_t evocore_meta_save(const evocore_meta_population_t *meta_pop,
 
 evocore_error_t evocore_meta_load(const char *filepath,
                                evocore_meta_population_t *meta_pop) {
-    (void)filepath;
-    (void)meta_pop;
-    /* TODO: Implement meta-population load */
-    return EVOCORE_ERR_NOT_IMPLEMENTED;
+    if (!filepath || !meta_pop) {
+        return EVOCORE_ERR_NULL_PTR;
+    }
+
+    FILE *f = fopen(filepath, "rb");
+    if (!f) {
+        return EVOCORE_ERR_FILE_NOT_FOUND;
+    }
+
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (file_size <= 0) {
+        fclose(f);
+        return EVOCORE_ERR_FILE_READ;
+    }
+
+    char *buffer = (char*)evocore_malloc(file_size + 1);
+    if (!buffer) {
+        fclose(f);
+        return EVOCORE_ERR_OUT_OF_MEMORY;
+    }
+
+    size_t read_size = fread(buffer, 1, file_size, f);
+    fclose(f);
+
+    if (read_size != (size_t)file_size) {
+        evocore_free(buffer);
+        return EVOCORE_ERR_FILE_READ;
+    }
+
+    buffer[file_size] = '\0';
+
+    evocore_error_t err = evocore_meta_deserialize(buffer, file_size, meta_pop);
+    evocore_free(buffer);
+
+    return err;
 }
 
 /*========================================================================
@@ -1131,8 +1420,21 @@ evocore_error_t evocore_checkpoint_restore(const evocore_checkpoint_t *checkpoin
 
     /* Restore meta state */
     if (meta_pop && checkpoint->has_meta_state) {
-        /* TODO: Restore meta-parameters */
-        (void)checkpoint->meta_params;
+        /* Restore best meta parameters */
+        meta_pop->best_params = checkpoint->meta_params;
+        meta_pop->best_meta_fitness = checkpoint->best_fitness;
+
+        /* If meta data is available, deserialize full meta-population */
+        if (checkpoint->meta_data && checkpoint->meta_data_size > 0) {
+            evocore_error_t err = evocore_meta_deserialize(
+                checkpoint->meta_data,
+                checkpoint->meta_data_size,
+                meta_pop);
+            if (err != EVOCORE_OK) {
+                evocore_log_warn("Failed to restore full meta-population: %d", err);
+                /* Keep the basic params we already restored */
+            }
+        }
     }
 
     return EVOCORE_OK;

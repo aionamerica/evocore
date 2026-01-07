@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  evocore:
+    build:
+      context: ..
+      dockerfile: deployment/docker/Dockerfile
+    container_name: evocore
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - EVOCORE_LOG_LEVEL=INFO
+    volumes:
+      - ./checkpoints:/var/lib/evocore/checkpoints
+      - ./logs:/var/log/evocore
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+        limits:
+          memory: 4G
+
+  evocore-cpu:
+    build:
+      context: ..
+      dockerfile: deployment/docker/Dockerfile
+    container_name: evocore-cpu
+    environment:
+      - EVOCORE_LOG_LEVEL=INFO
+    volumes:
+      - ./checkpoints:/var/lib/evocore/checkpoints
+      - ./logs:/var/log/evocore
+    deploy:
+      resources:
+        limits:
+          memory: 2G

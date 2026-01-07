@@ -265,8 +265,8 @@ static int run_evolution_with_monitoring(void) {
     printf("OpenMP Available: %s\n", diag.openmp_available ? "Yes" : "No");
 
     printf("\nMemory:\n");
-    printf("  Current: %zu bytes\n", diag.memory.current_usage);
-    printf("  Peak: %zu bytes\n", diag.memory.peak_usage);
+    printf("  Current: %zu bytes\n", diag.memory.current_allocated);
+    printf("  Peak: %zu bytes\n", diag.memory.peak_allocated);
 
     printf("\nPerformance Counters:\n");
     for (int i = 0; i < diag.perf.count; i++) {

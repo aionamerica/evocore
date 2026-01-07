@@ -111,7 +111,7 @@ evocore_error_t evocore_stats_update(evocore_stats_t *stats,
     if (stats->track_memory) {
         evocore_memory_stats_t mem_stats;
         evocore_memory_get_stats(&mem_stats);
-        stats->memory_usage_bytes = mem_stats.current_usage;
+        stats->memory_usage_bytes = mem_stats.current_allocated;
     }
 
     return EVOCORE_OK;
@@ -354,8 +354,8 @@ evocore_error_t evocore_diagnostic_generate(const evocore_population_t *pop,
     }
 
     /* Health indicators */
-    report->memory_healthy = (report->memory.current_usage <
-                              (report->memory.peak_usage * 1.5));
+    report->memory_healthy = (report->memory.current_allocated <
+                              (report->memory.peak_allocated * 1.5));
     report->performance_healthy = true;
 
     return EVOCORE_OK;
@@ -374,8 +374,8 @@ void evocore_diagnostic_print(const evocore_diagnostic_report_t *report) {
     printf("  OpenMP: %s\n\n", report->openmp_available ? "available" : "not available");
 
     printf("Memory:\n");
-    printf("  Current: %zu bytes\n", report->memory.current_usage);
-    printf("  Peak: %zu bytes\n", report->memory.peak_usage);
+    printf("  Current: %zu bytes\n", report->memory.current_allocated);
+    printf("  Peak: %zu bytes\n", report->memory.peak_allocated);
     printf("  Allocations: %zu\n", report->memory.allocation_count);
     printf("  Status: %s\n\n", report->memory_healthy ? "OK" : "WARNING");
 
@@ -410,8 +410,8 @@ void evocore_diagnostic_log(const evocore_diagnostic_report_t *report) {
                     report->simd_available ? "yes" : "no",
                     report->openmp_available ? "yes" : "no");
     evocore_log_info("Memory: %zu / %zu bytes, %zu allocations",
-                    report->memory.current_usage,
-                    report->memory.peak_usage,
+                    report->memory.current_allocated,
+                    report->memory.peak_allocated,
                     report->memory.allocation_count);
 
     if (report->population_size > 0) {

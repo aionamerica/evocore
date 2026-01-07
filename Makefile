@@ -63,6 +63,8 @@ SRCS := $(SRC_DIR)/error.c \
         $(SRC_DIR)/optimize.c \
         $(SRC_DIR)/persist.c \
         $(SRC_DIR)/stats.c \
+        $(SRC_DIR)/arena.c \
+        $(SRC_DIR)/memory.c \
         $(SRC_DIR)/internal.c
 
 # Object files
@@ -89,7 +91,8 @@ TESTS := $(BUILD_DIR)/test_genome \
          $(BUILD_DIR)/test_gpu \
          $(BUILD_DIR)/test_persist \
          $(BUILD_DIR)/test_stats \
-         $(BUILD_DIR)/test_integration
+         $(BUILD_DIR)/test_integration \
+         $(BUILD_DIR)/test_performance_bench
 
 # Platform detection
 UNAME_S := $(shell uname -s)
@@ -178,6 +181,12 @@ test: tests
 run: examples
 	@echo "Running sphere function example..."
 	$(BUILD_DIR)/sphere_function $(EXAMPLE_DIR)/sphere_config.ini
+
+# Benchmark target
+.PHONY: benchmark
+benchmark: tests
+	@echo "Running performance benchmarks..."
+	@$(BUILD_DIR)/test_performance_bench
 
 # Install library
 .PHONY: install

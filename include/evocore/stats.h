@@ -11,6 +11,7 @@
 #include "evocore/population.h"
 #include "evocore/error.h"
 #include "evocore/optimize.h"
+#include "evocore/memory.h"
 #include <stddef.h>
 #include <stdbool.h>
 
