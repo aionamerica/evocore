@@ -2,7 +2,6 @@
 
 **Version:** 0.4.0
 **Language:** C99
-**Status:** Production Ready
 
 A domain-agnostic meta-evolutionary framework for evolutionary computation research and optimization.
 
@@ -316,4 +315,4 @@ make benchmark
 
 ## License
 
-Proprietary - All rights reserved
+MIT License - Copyright (c) 2026 AION América S.A.S.
