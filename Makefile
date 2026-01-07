@@ -8,8 +8,40 @@ DEBUG_CFLAGS ?= -Wall -Wextra -std=gnu99 -g -O0 -DDEBUG
 LDFLAGS ?=
 INCLUDES := -Iinclude
 
-# OpenMP support is optional - disable for now due to nix compatibility issues
-# To enable: make CFLAGS='-DOMP_SUPPORT -fopenmp' LDFLAGS='-fopenmp'
+# CUDA support - auto-detect or enable with CUDA=yes
+CUDA_ROOT ?= /usr/local/cuda
+HAS_CUDA := $(shell test -f $(CUDA_ROOT)/include/cuda_runtime.h && echo yes)
+
+ifeq ($(CUDA),yes)
+    HAS_CUDA := yes
+endif
+
+ifeq ($(HAS_CUDA),yes)
+    NVCC ?= $(CUDA_ROOT)/bin/nvcc
+    CUDA_CFLAGS := -DEVOCORE_HAVE_CUDA -I$(CUDA_ROOT)/include
+    CUDA_LDFLAGS := -L$(CUDA_ROOT)/lib64 -lcudart
+    CUDA_SOURCES := $(wildcard $(SRC_DIR)/cuda/*.cu)
+    CUDA_OBJS := $(CUDA_SOURCES:$(SRC_DIR)/cuda/%.cu=$(BUILD_DIR)/cuda_%.o)
+    OBJS += $(CUDA_OBJS)
+    LDFLAGS += $(CUDA_LDFLAGS)
+    CFLAGS += $(CUDA_CFLAGS)
+    $(info "CUDA support: enabled")
+else
+    CUDA_CFLAGS :=
+    CUDA_LDFLAGS :=
+    CUDA_SOURCES :=
+    CUDA_OBJS :=
+    $(info "CUDA support: disabled (set CUDA=yes to enable)")
+endif
+
+# OpenMP support - enable with OMP=yes
+ifeq ($(OMP),yes)
+    CFLAGS += -DOMP_SUPPORT -fopenmp
+    LDFLAGS += -fopenmp
+    $(info "OpenMP support: enabled")
+else
+    $(info "OpenMP support: disabled (set OMP=yes to enable)")
+endif
 
 # Directories
 SRC_DIR := src
@@ -62,11 +94,14 @@ TESTS := $(BUILD_DIR)/test_genome \
 # Platform detection
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
-    LDFLAGS += -lm -lpthread
+    LDFLAGS += -lm -lpthread -lrt
 endif
 ifeq ($(UNAME_S),Darwin)
-    LDFLAGS += -lm
+    LDFLAGS += -lm -lpthread
 endif
+
+# Pthread support for CPU parallel evaluation (always enabled)
+CFLAGS += -DEVOCORE_HAVE_PTHREADS
 
 # Default target
 .PHONY: all
@@ -79,6 +114,10 @@ $(BUILD_DIR):
 # Library object files
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+# CUDA object files
+$(BUILD_DIR)/cuda_%.o: $(SRC_DIR)/cuda/%.cu | $(BUILD_DIR)
+	$(NVCC) -O3 -arch=native --compiler-options "$(CFLAGS) $(INCLUDES)" -c $< -o $@
 
 # Build static library
 $(LIB): $(OBJS)
@@ -190,5 +229,15 @@ help:
 	@echo "  install   - Install library to /usr/local"
 	@echo "  uninstall - Remove library from /usr/local"
 	@echo "  help      - Show this help message"
+	@echo ""
+	@echo "Build Options:"
+	@echo "  CUDA=yes  - Enable CUDA support (requires CUDA toolkit)"
+	@echo "  OMP=yes   - Enable OpenMP support"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make                 - Build without CUDA"
+	@echo "  make CUDA=yes        - Build with CUDA support"
+	@echo "  make OMP=yes         - Build with OpenMP"
+	@echo "  make CUDA=yes OMP=yes - Build with both CUDA and OpenMP"
 
 .PHONY: all debug clean distclean install uninstall test run valgrind help

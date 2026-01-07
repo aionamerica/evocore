@@ -6,6 +6,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
+
+#ifdef EVOCORE_HAVE_PTHREADS
+#include <pthread.h>
+#endif
 
 /*========================================================================
  * CUDA Detection (Runtime)
@@ -13,7 +18,33 @@
 
 #ifdef EVOCORE_HAVE_CUDA
 #include <cuda_runtime.h>
-#endif
+
+/* External CUDA functions from fitness.cu */
+extern int cuda_batch_evaluate_sync(
+    const void* d_genomes,
+    void* d_fitnesses,
+    size_t genome_size,
+    int count,
+    int fitness_type
+);
+
+extern void* cuda_copy_genomes_to_device(
+    const void* h_genomes,
+    size_t genome_size,
+    int count
+);
+
+extern int cuda_copy_fitnesses_from_device(
+    void* h_fitnesses,
+    const void* d_fitnesses,
+    int count
+);
+
+extern void cuda_free_device_memory(void* d_ptr);
+
+extern const char* cuda_get_error_string(void);
+
+#endif /* EVOCORE_HAVE_CUDA */
 
 /*========================================================================
  * GPU Context State
@@ -267,18 +298,125 @@ evocore_error_t evocore_gpu_evaluate_batch(evocore_gpu_context_t *ctx,
     /* Try GPU first if available */
     if (ctx->cuda_available && ctx->gpu_enabled) {
 #ifdef EVOCORE_HAVE_CUDA
-        /* TODO: Implement CUDA batch evaluation */
-        /* For now, fall through to CPU */
+        double gpu_start = get_time_ms();
+
+        /* Flatten genome data for GPU transfer */
+        size_t total_size = batch->genome_size * batch->count;
+        uint8_t *flat_genomes = (uint8_t*)evocore_malloc(total_size);
+        if (flat_genomes) {
+            /* Flatten genomes */
+            for (size_t i = 0; i < batch->count; i++) {
+                if (batch->genomes[i] != NULL) {
+                    memcpy(flat_genomes + i * batch->genome_size,
+                           batch->genomes[i]->data,
+                           batch->genomes[i]->size < batch->genome_size ?
+                               batch->genomes[i]->size : batch->genome_size);
+                    /* Zero pad if needed */
+                    if (batch->genomes[i]->size < batch->genome_size) {
+                        memset(flat_genomes + i * batch->genome_size + batch->genomes[i]->size,
+                               0, batch->genome_size - batch->genomes[i]->size);
+                    }
+                }
+            }
+
+            /* Copy to device */
+            void *d_genomes = cuda_copy_genomes_to_device(flat_genomes,
+                                                          batch->genome_size,
+                                                          batch->count);
+            void *d_fitnesses = NULL;
+            cudaMalloc(&d_fitnesses, batch->count * sizeof(double));
+
+            if (d_genomes && d_fitnesses) {
+                /* Evaluate on GPU */
+                int cuda_result = cuda_batch_evaluate_sync(d_genomes, d_fitnesses,
+                                                           batch->genome_size,
+                                                           batch->count,
+                                                           0);  /* FITNESS_SPHERE */
+
+                if (cuda_result > 0) {
+                    /* Copy results back */
+                    if (cuda_copy_fitnesses_from_device(batch->fitnesses,
+                                                        d_fitnesses,
+                                                        batch->count)) {
+                        result->evaluated = batch->count;
+                        result->used_gpu = true;
+                    }
+                }
+            }
+
+            /* Cleanup */
+            if (d_genomes) cuda_free_device_memory(d_genomes);
+            if (d_fitnesses) cudaFree(d_fitnesses);
+            evocore_free(flat_genomes);
+
+            double gpu_end = get_time_ms();
+            result->gpu_time_ms = gpu_end - gpu_start;
+        }
+
+        /* If GPU evaluation failed, fall through to CPU */
+        if (result->evaluated > 0) {
+            ctx->stats.total_evaluations += result->evaluated;
+            ctx->stats.gpu_evaluations += result->evaluated;
+            ctx->stats.total_gpu_time_ms += result->gpu_time_ms;
+            ctx->stats.avg_gpu_time_ms = ctx->stats.total_gpu_time_ms /
+                                         (ctx->stats.gpu_evaluations > 0 ?
+                                          ctx->stats.gpu_evaluations : 1);
+            return EVOCORE_OK;
+        }
 #endif
     }
 
-    /* CPU evaluation (serial fallback) */
+    /* CPU evaluation with pthread support */
     double start_time = get_time_ms();
 
-    for (size_t i = 0; i < batch->count; i++) {
-        if (batch->genomes[i] != NULL && fitness_func != NULL) {
-            batch->fitnesses[i] = fitness_func(batch->genomes[i], user_context);
-            result->evaluated++;
+#ifdef EVOCORE_HAVE_PTHREADS
+    int num_threads = sysconf(_SC_NPROCESSORS_ONLN);
+    if (num_threads < 1) num_threads = 1;
+    if (num_threads > 16) num_threads = 16;  /* Cap at 16 threads */
+
+    if (batch->count > 10 && num_threads > 1) {
+        /* Parallel evaluation */
+        pthread_t *threads = evocore_calloc(num_threads, sizeof(pthread_t));
+        cpu_eval_task_t *tasks = evocore_calloc(num_threads, sizeof(cpu_eval_task_t));
+        size_t chunk_size = (batch->count + num_threads - 1) / num_threads;
+
+        if (threads && tasks) {
+            for (int t = 0; t < num_threads; t++) {
+                tasks[t].genomes = batch->genomes;
+                tasks[t].fitnesses = batch->fitnesses;
+                tasks[t].count = batch->count;
+                tasks[t].fitness_func = fitness_func;
+                tasks[t].user_context = user_context;
+                tasks[t].start = t * chunk_size;
+                tasks[t].end = (t + 1) * chunk_size;
+                if (tasks[t].end > batch->count) tasks[t].end = batch->count;
+
+                if (tasks[t].start < tasks[t].end) {
+                    pthread_create(&threads[t], NULL, cpu_eval_worker, &tasks[t]);
+                }
+            }
+
+            /* Wait for all threads */
+            for (int t = 0; t < num_threads; t++) {
+                if (tasks[t].start < tasks[t].end) {
+                    pthread_join(threads[t], NULL);
+                }
+            }
+
+            result->evaluated = batch->count;
+        }
+
+        evocore_free(threads);
+        evocore_free(tasks);
+    } else
+#endif
+    {
+        /* Serial evaluation */
+        for (size_t i = 0; i < batch->count; i++) {
+            if (batch->genomes[i] != NULL && fitness_func != NULL) {
+                batch->fitnesses[i] = fitness_func(batch->genomes[i], user_context);
+                result->evaluated++;
+            }
         }
     }
 
@@ -315,12 +453,57 @@ evocore_error_t evocore_cpu_evaluate_batch(const evocore_eval_batch_t *batch,
 
     double start_time = get_time_ms();
 
-    /* Simple serial evaluation for now */
-    /* TODO: Add pthread support for parallel evaluation */
-    for (size_t i = 0; i < batch->count; i++) {
-        if (batch->genomes[i] != NULL && fitness_func != NULL) {
-            batch->fitnesses[i] = fitness_func(batch->genomes[i], user_context);
-            result->evaluated++;
+#ifdef EVOCORE_HAVE_PTHREADS
+    /* Determine thread count */
+    if (num_threads <= 0) {
+        num_threads = sysconf(_SC_NPROCESSORS_ONLN);
+        if (num_threads < 1) num_threads = 1;
+        if (num_threads > 16) num_threads = 16;
+    }
+
+    /* Use pthread if batch is large enough */
+    if (batch->count > 10 && num_threads > 1) {
+        pthread_t *threads = evocore_calloc(num_threads, sizeof(pthread_t));
+        cpu_eval_task_t *tasks = evocore_calloc(num_threads, sizeof(cpu_eval_task_t));
+        size_t chunk_size = (batch->count + num_threads - 1) / num_threads;
+
+        if (threads && tasks) {
+            for (int t = 0; t < num_threads; t++) {
+                tasks[t].genomes = batch->genomes;
+                tasks[t].fitnesses = batch->fitnesses;
+                tasks[t].count = batch->count;
+                tasks[t].fitness_func = fitness_func;
+                tasks[t].user_context = user_context;
+                tasks[t].start = t * chunk_size;
+                tasks[t].end = (t + 1) * chunk_size;
+                if (tasks[t].end > batch->count) tasks[t].end = batch->count;
+
+                if (tasks[t].start < tasks[t].end) {
+                    pthread_create(&threads[t], NULL, cpu_eval_worker, &tasks[t]);
+                }
+            }
+
+            /* Wait for all threads */
+            for (int t = 0; t < num_threads; t++) {
+                if (tasks[t].start < tasks[t].end) {
+                    pthread_join(threads[t], NULL);
+                }
+            }
+
+            result->evaluated = batch->count;
+        }
+
+        evocore_free(threads);
+        evocore_free(tasks);
+    } else
+#endif
+    {
+        /* Serial evaluation */
+        for (size_t i = 0; i < batch->count; i++) {
+            if (batch->genomes[i] != NULL && fitness_func != NULL) {
+                batch->fitnesses[i] = fitness_func(batch->genomes[i], user_context);
+                result->evaluated++;
+            }
         }
     }
 
