@@ -400,6 +400,32 @@ bool evocore_context_load_json(
 );
 
 /**
+ * Save context system to binary file
+ *
+ * Binary format is ~5-10x more efficient than JSON.
+ *
+ * @param system Context system to save
+ * @param filepath Output file path
+ * @return true on success
+ */
+bool evocore_context_save_binary(
+    const evocore_context_system_t *system,
+    const char *filepath
+);
+
+/**
+ * Load context system from binary file
+ *
+ * @param filepath Input file path
+ * @param out_system Output context system (caller must free with evocore_context_system_free)
+ * @return true on success
+ */
+bool evocore_context_load_binary(
+    const char *filepath,
+    evocore_context_system_t **out_system
+);
+
+/**
  * Export context statistics to CSV
  *
  * @param system Context system

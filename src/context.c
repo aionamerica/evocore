@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <pthread.h>
+#include <arpa/inet.h>
 
 /*========================================================================
  * Constants
@@ -778,6 +779,367 @@ bool evocore_context_load_json(
     /* TODO: Implement JSON loading */
     (void)filepath;
     (void)out_system;
+    return false;
+}
+
+/*========================================================================
+ * Binary Persistence
+ *========================================================================*/
+
+#define BINARY_MAGIC "EVCX"  /* Context Binary Magic */
+#define BINARY_VERSION 1      /* Binary format version */
+
+/* Helper: Write string with length prefix */
+static bool write_string(FILE *f, const char *str) {
+    if (!str) {
+        uint32_t len = 0;
+        if (fwrite(&len, sizeof(uint32_t), 1, f) != 1) return false;
+        return true;
+    }
+    uint32_t len = (uint32_t)strlen(str);
+    uint32_t len_net = htonl(len);
+    if (fwrite(&len_net, sizeof(uint32_t), 1, f) != 1) return false;
+    if (len > 0 && fwrite(str, 1, len, f) != len) return false;
+    return true;
+}
+
+/* Helper: Read string with length prefix */
+static bool read_string(FILE *f, char **out_str) {
+    uint32_t len_net;
+    if (fread(&len_net, sizeof(uint32_t), 1, f) != 1) return false;
+    uint32_t len = ntohl(len_net);
+
+    if (len == 0) {
+        *out_str = NULL;
+        return true;
+    }
+
+    char *str = evocore_malloc(len + 1);
+    if (!str) return false;
+
+    if (fread(str, 1, len, f) != len) {
+        evocore_free(str);
+        return false;
+    }
+    str[len] = '\0';
+    *out_str = str;
+    return true;
+}
+
+/* Helper: Write uint32 */
+static bool write_uint32(FILE *f, uint32_t val) {
+    uint32_t net = htonl(val);
+    return fwrite(&net, sizeof(uint32_t), 1, f) == 1;
+}
+
+/* Helper: Read uint32 */
+static bool read_uint32(FILE *f, uint32_t *out_val) {
+    uint32_t net;
+    if (fread(&net, sizeof(uint32_t), 1, f) != 1) return false;
+    *out_val = ntohl(net);
+    return true;
+}
+
+/* Helper: Write double */
+static bool write_double(FILE *f, double val) {
+    return fwrite(&val, sizeof(double), 1, f) == 1;
+}
+
+/* Helper: Read double */
+static bool read_double(FILE *f, double *out_val) {
+    return fread(out_val, sizeof(double), 1, f) == 1;
+}
+
+/* Helper: Write uint64 */
+static bool write_uint64(FILE *f, uint64_t val) {
+    /* Write in network byte order */
+    uint64_t net = (((uint64_t)htonl(val & 0xFFFFFFFF)) << 32) |
+                    htonl((val >> 32) & 0xFFFFFFFF);
+    return fwrite(&net, sizeof(uint64_t), 1, f) == 1;
+}
+
+/* Helper: Read uint64 */
+static bool read_uint64(FILE *f, uint64_t *out_val) {
+    uint64_t net;
+    if (fread(&net, sizeof(uint64_t), 1, f) != 1) return false;
+    *out_val = (((uint64_t)ntohl(net & 0xFFFFFFFF)) << 32) |
+               ntohl((net >> 32) & 0xFFFFFFFF);
+    return true;
+}
+
+bool evocore_context_save_binary(
+    const evocore_context_system_t *system,
+    const char *filepath
+) {
+    if (!system || !filepath) return false;
+
+    FILE *f = fopen(filepath, "wb");
+    if (!f) return false;
+
+    hash_table_t *table = (hash_table_t*)system->internal;
+    if (!table) {
+        fclose(f);
+        return false;
+    }
+
+    /* Write header */
+    if (fwrite(BINARY_MAGIC, 1, 4, f) != 4) goto error;
+    if (!write_uint32(f, BINARY_VERSION)) goto error;
+    if (!write_uint32(f, (uint32_t)system->dimension_count)) goto error;
+    if (!write_uint32(f, (uint32_t)system->param_count)) goto error;
+
+    /* Write dimensions */
+    for (size_t i = 0; i < system->dimension_count; i++) {
+        evocore_context_dimension_t *dim = &system->dimensions[i];
+        if (!write_string(f, dim->name)) goto error;
+        if (!write_uint32(f, (uint32_t)dim->value_count)) goto error;
+        for (size_t j = 0; j < dim->value_count; j++) {
+            if (!write_string(f, dim->values[j])) goto error;
+        }
+    }
+
+    /* Write contexts */
+    uint32_t total_contexts = 0;
+    for (size_t i = 0; i < table->capacity; i++) {
+        hash_entry_t *entry = table->entries[i];
+        while (entry) {
+            total_contexts++;
+            entry = entry->next;
+        }
+    }
+
+    if (!write_uint32(f, total_contexts)) goto error;
+
+    /* Write each context */
+    for (size_t i = 0; i < table->capacity; i++) {
+        hash_entry_t *entry = table->entries[i];
+        while (entry) {
+            evocore_context_stats_t *stats = entry->stats;
+
+            if (!write_string(f, stats->key)) goto error;
+            if (!write_uint32(f, (uint32_t)stats->param_count)) goto error;
+            if (!write_uint32(f, (uint32_t)stats->total_experiences)) goto error;
+            if (!write_double(f, stats->confidence)) goto error;
+            if (!write_double(f, stats->avg_fitness)) goto error;
+            if (!write_double(f, stats->best_fitness)) goto error;
+            if (!write_uint64(f, (uint64_t)stats->first_update)) goto error;
+            if (!write_uint64(f, (uint64_t)stats->last_update)) goto error;
+
+            /* Write weighted statistics for each parameter */
+            if (stats->stats && stats->stats->stats) {
+                for (size_t j = 0; j < stats->param_count; j++) {
+                    evocore_weighted_stats_t *ws = &stats->stats->stats[j];
+                    if (!write_double(f, ws->mean)) goto error;
+                    if (!write_double(f, ws->variance)) goto error;
+                    if (!write_double(f, ws->sum_weights)) goto error;
+                    if (!write_uint32(f, (uint32_t)ws->count)) goto error;
+                }
+            } else {
+                /* Write zeros for missing stats */
+                for (size_t j = 0; j < stats->param_count; j++) {
+                    if (!write_double(f, 0.0)) goto error;
+                    if (!write_double(f, 0.0)) goto error;
+                    if (!write_double(f, 0.0)) goto error;
+                    if (!write_uint32(f, 0)) goto error;
+                }
+            }
+
+            entry = entry->next;
+        }
+    }
+
+    fclose(f);
+    return true;
+
+error:
+    fclose(f);
+    return false;
+}
+
+bool evocore_context_load_binary(
+    const char *filepath,
+    evocore_context_system_t **out_system
+) {
+    if (!filepath || !out_system) return false;
+
+    FILE *f = fopen(filepath, "rb");
+    if (!f) return false;
+
+    char magic[4];
+    if (fread(magic, 1, 4, f) != 4) goto error;
+    if (memcmp(magic, BINARY_MAGIC, 4) != 0) {
+        evocore_log_error("Invalid magic in context binary file");
+        goto error;
+    }
+
+    uint32_t version;
+    if (!read_uint32(f, &version)) goto error;
+    if (version != BINARY_VERSION) {
+        evocore_log_error("Unsupported binary version: %u", version);
+        goto error;
+    }
+
+    uint32_t dim_count, param_count;
+    if (!read_uint32(f, &dim_count)) goto error;
+    if (!read_uint32(f, &param_count)) goto error;
+
+    /* Allocate context system */
+    evocore_context_system_t *system = evocore_calloc(1, sizeof(evocore_context_system_t));
+    if (!system) goto error;
+
+    system->dimensions = evocore_calloc(dim_count, sizeof(evocore_context_dimension_t));
+    if (!system->dimensions) {
+        evocore_free(system);
+        goto error;
+    }
+    system->dimension_count = dim_count;
+    system->param_count = param_count;
+
+    /* Read dimensions */
+    for (size_t i = 0; i < dim_count; i++) {
+        if (!read_string(f, &system->dimensions[i].name)) {
+            evocore_context_system_free(system);
+            goto error;
+        }
+
+        uint32_t value_count;
+        if (!read_uint32(f, &value_count)) {
+            evocore_context_system_free(system);
+            goto error;
+        }
+        system->dimensions[i].value_count = value_count;
+
+        system->dimensions[i].values = evocore_calloc(value_count, sizeof(char*));
+        if (!system->dimensions[i].values) {
+            evocore_context_system_free(system);
+            goto error;
+        }
+
+        for (size_t j = 0; j < value_count; j++) {
+            if (!read_string(f, &system->dimensions[i].values[j])) {
+                evocore_context_system_free(system);
+                goto error;
+            }
+        }
+    }
+
+    /* Create hash table - use next power of 2 from expected count */
+    uint32_t context_count;
+    if (!read_uint32(f, &context_count)) {
+        evocore_context_system_free(system);
+        goto error;
+    }
+
+    /* Calculate appropriate capacity (power of 2, at least 256) */
+    size_t capacity = INITIAL_HASH_CAPACITY;
+    while (capacity < context_count * 2) {
+        capacity *= 2;
+    }
+
+    hash_table_t *table = hash_create(capacity, dim_count);
+    if (!table) {
+        evocore_context_system_free(system);
+        goto error;
+    }
+    system->internal = table;
+    system->total_contexts = context_count;
+
+    /* Read contexts */
+    for (size_t i = 0; i < context_count; i++) {
+        char *key = NULL;
+        uint32_t param_cnt, experiences;
+        double confidence, avg_fitness, best_fitness;
+        uint64_t first_update, last_update;
+
+        if (!read_string(f, &key)) {
+            evocore_context_system_free(system);
+            goto error;
+        }
+        if (!read_uint32(f, &param_cnt)) {
+            evocore_free(key);
+            evocore_context_system_free(system);
+            goto error;
+        }
+        if (!read_uint32(f, &experiences)) {
+            evocore_free(key);
+            evocore_context_system_free(system);
+            goto error;
+        }
+        if (!read_double(f, &confidence)) {
+            evocore_free(key);
+            evocore_context_system_free(system);
+            goto error;
+        }
+        if (!read_double(f, &avg_fitness)) {
+            evocore_free(key);
+            evocore_context_system_free(system);
+            goto error;
+        }
+        if (!read_double(f, &best_fitness)) {
+            evocore_free(key);
+            evocore_context_system_free(system);
+            goto error;
+        }
+        if (!read_uint64(f, &first_update)) {
+            evocore_free(key);
+            evocore_context_system_free(system);
+            goto error;
+        }
+        if (!read_uint64(f, &last_update)) {
+            evocore_free(key);
+            evocore_context_system_free(system);
+            goto error;
+        }
+
+        /* Create or get hash entry */
+        hash_entry_t *entry = hash_set(table, key, param_cnt);
+        evocore_free(key);  /* hash_set makes a copy */
+        if (!entry) {
+            evocore_context_system_free(system);
+            goto error;
+        }
+
+        /* Set metadata */
+        evocore_context_stats_t *stats = entry->stats;
+        stats->total_experiences = experiences;
+        stats->confidence = confidence;
+        stats->avg_fitness = avg_fitness;
+        stats->best_fitness = best_fitness;
+        stats->first_update = (time_t)first_update;
+        stats->last_update = (time_t)last_update;
+
+        /* Read weighted statistics */
+        if (stats->stats && stats->stats->stats) {
+            for (size_t j = 0; j < stats->param_count; j++) {
+                evocore_weighted_stats_t *ws = &stats->stats->stats[j];
+                if (!read_double(f, &ws->mean)) {
+                    evocore_context_system_free(system);
+                    goto error;
+                }
+                if (!read_double(f, &ws->variance)) {
+                    evocore_context_system_free(system);
+                    goto error;
+                }
+                if (!read_double(f, &ws->sum_weights)) {
+                    evocore_context_system_free(system);
+                    goto error;
+                }
+                uint32_t count_val;
+                if (!read_uint32(f, &count_val)) {
+                    evocore_context_system_free(system);
+                    goto error;
+                }
+                ws->count = count_val;
+            }
+        }
+    }
+
+    fclose(f);
+    *out_system = system;
+    return true;
+
+error:
+    fclose(f);
     return false;
 }
 
