@@ -66,6 +66,7 @@ SRCS := $(SRC_DIR)/error.c \
         $(SRC_DIR)/arena.c \
         $(SRC_DIR)/memory.c \
         $(SRC_DIR)/weighted.c \
+        $(SRC_DIR)/negative.c \
         $(SRC_DIR)/context.c \
         $(SRC_DIR)/temporal.c \
         $(SRC_DIR)/exploration.c \
@@ -98,6 +99,7 @@ TESTS := $(BUILD_DIR)/test_genome \
          $(BUILD_DIR)/test_persist \
          $(BUILD_DIR)/test_stats \
          $(BUILD_DIR)/test_weighted \
+         $(BUILD_DIR)/test_negative \
          $(BUILD_DIR)/test_context \
          $(BUILD_DIR)/test_temporal \
          $(BUILD_DIR)/test_exploration \

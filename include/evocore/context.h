@@ -16,6 +16,7 @@
 #define EVOCORE_CONTEXT_H
 
 #include "evocore/weighted.h"
+#include "evocore/genome.h"
 #include <stddef.h>
 #include <stdbool.h>
 #include <time.h>
@@ -23,12 +24,10 @@
 /*========================================================================
  * Forward Declarations
  *========================================================================*/
-typedef struct evocore_negative_learning_t evocore_negative_learning_t;
-typedef struct evocore_genome_t evocore_genome_t;
-typedef struct evocore_negative_stats_s evocore_negative_stats_t;
-
-/* Failure severity as int for forward declaration compatibility */
-typedef int evocore_failure_severity_t;
+/* Include negative.h for negative learning types and enums
+ * Note: negative.h only depends on genome.h and error.h, which are already included
+ */
+#include "evocore/negative.h"
 
 /*========================================================================
  * Data Structures

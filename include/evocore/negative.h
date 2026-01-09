@@ -106,8 +106,9 @@ typedef struct {
  * Negative learning statistics
  *
  * Snapshot of negative learning state for monitoring.
+ * Note: typedef name matches forward declaration in context.h
  */
-typedef struct {
+typedef struct evocore_negative_stats_s {
     size_t total_count;      /* Total failures stored */
     size_t active_count;     /* Currently active (penalty > 0.1) */
     size_t mild_count;       /* MILD severity count */
@@ -117,7 +118,7 @@ typedef struct {
     double avg_penalty;      /* Average penalty across all failures */
     double max_penalty;      /* Maximum penalty */
     size_t repeat_victims;   /* Failures with repeat_count > 1 */
-} evocore_negative_stats_t;
+} evocore_negative_stats_t;  /* typedef alias for compatibility */
 
 /*========================================================================
  * Lifecycle Functions

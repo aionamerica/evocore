@@ -182,19 +182,20 @@ static evocore_failure_record_t* failure_record_create(
 }
 
 /**
- * Free a failure record
+ * Free a failure record's internal memory
+ * Does NOT free the record struct itself - use for array elements
  */
-static void failure_record_free(evocore_failure_record_t *record) {
+static void failure_record_clear(evocore_failure_record_t *record) {
     if (!record) return;
 
     if (record->genome) {
         if (record->genome->owns_memory && record->genome->data) {
             evocore_free(record->genome->data);
+            record->genome->data = NULL;
         }
         evocore_free(record->genome);
+        record->genome = NULL;
     }
-
-    evocore_free(record);
 }
 
 /*========================================================================
@@ -213,7 +214,7 @@ evocore_error_t evocore_negative_learning_init(
 
     if (capacity == 0) capacity = EVOCORE_DEFAULT_CAPACITY;
 
-    neg->failures = evocore_calloc(capacity, sizeof(evocore_failure_record_t*));
+    neg->failures = evocore_calloc(capacity, sizeof(evocore_failure_record_t));
     if (!neg->failures) {
         return EVOCORE_ERR_OUT_OF_MEMORY;
     }
@@ -269,7 +270,7 @@ void evocore_negative_learning_cleanup(evocore_negative_learning_t *neg) {
     if (!neg) return;
 
     for (size_t i = 0; i < neg->count; i++) {
-        failure_record_free(neg->failures[i]);
+        failure_record_clear(&neg->failures[i]);
     }
 
     evocore_free(neg->failures);
@@ -315,9 +316,9 @@ evocore_error_t evocore_negative_learning_record_failure_severity(
     size_t best_index = neg->count;  /* Default to new */
 
     for (size_t i = 0; i < neg->count; i++) {
-        if (!neg->failures[i]->is_active) continue;
+        if (!neg->failures[i].is_active) continue;
 
-        double sim = genome_similarity(genome, neg->failures[i]->genome);
+        double sim = genome_similarity(genome, neg->failures[i].genome);
         if (sim > best_similarity) {
             best_similarity = sim;
             best_index = i;
@@ -326,7 +327,7 @@ evocore_error_t evocore_negative_learning_record_failure_severity(
 
     /* If similar enough, update existing record */
     if (best_index < neg->count && best_similarity >= neg->similarity_threshold) {
-        evocore_failure_record_t *record = neg->failures[best_index];
+        evocore_failure_record_t *record = &neg->failures[best_index];
 
         record->repeat_count++;
         record->last_seen = time(NULL);
@@ -368,10 +369,13 @@ evocore_error_t evocore_negative_learning_record_failure_severity(
         return EVOCORE_ERR_OUT_OF_MEMORY;
     }
 
-    neg->failures[neg->count++] = record;
+    neg->failures[neg->count++] = *record;
+    /* Clear the genome pointer in the temp record so it's not freed */
+    record->genome = NULL;
+    evocore_free(record);  /* Free the temporary struct */
 
     evocore_log_debug("Recorded new failure: severity=%s, penalty=%.2f",
-                      evocore_severity_string(severity), record->penalty_score);
+                      evocore_severity_string(severity), neg->failures[neg->count - 1].penalty_score);
 
     return EVOCORE_OK;
 }
@@ -407,7 +411,7 @@ evocore_error_t evocore_negative_learning_check_penalty(
     double max_weighted_penalty = 0.0;
 
     for (size_t i = 0; i < neg->count; i++) {
-        evocore_failure_record_t *record = neg->failures[i];
+        evocore_failure_record_t *record = &neg->failures[i];
         if (!record->is_active) continue;
 
         double similarity = genome_similarity(genome, record->genome);
@@ -470,7 +474,7 @@ evocore_error_t evocore_negative_learning_find_similar(
     evocore_failure_record_t *best_record = NULL;
 
     for (size_t i = 0; i < neg->count; i++) {
-        evocore_failure_record_t *record = neg->failures[i];
+        evocore_failure_record_t *record = &neg->failures[i];
         if (!record->is_active) continue;
 
         double sim = genome_similarity(genome, record->genome);
@@ -502,7 +506,7 @@ void evocore_negative_learning_decay(
     double decay_factor = exp(-neg->decay_rate * generations_passed);
 
     for (size_t i = 0; i < neg->count; i++) {
-        evocore_failure_record_t *record = neg->failures[i];
+        evocore_failure_record_t *record = &neg->failures[i];
 
         record->penalty_score *= decay_factor;
 
@@ -529,7 +533,7 @@ size_t evocore_negative_learning_prune(
     /* Compact array by removing pruned entries */
     size_t write_idx = 0;
     for (size_t read_idx = 0; read_idx < neg->count; read_idx++) {
-        evocore_failure_record_t *record = neg->failures[read_idx];
+        evocore_failure_record_t *record = &neg->failures[read_idx];
 
         bool should_prune = false;
 
@@ -547,16 +551,11 @@ size_t evocore_negative_learning_prune(
         }
 
         if (should_prune) {
-            failure_record_free(record);
+            failure_record_clear(record);
             pruned++;
         } else {
-            neg->failures[write_idx++] = record;
+            neg->failures[write_idx++] = *record;
         }
-    }
-
-    /* Zero out remaining slots */
-    for (size_t i = write_idx; i < neg->count; i++) {
-        neg->failures[i] = NULL;
     }
 
     neg->count = write_idx;
@@ -583,7 +582,7 @@ evocore_error_t evocore_negative_learning_stats(
     double max_penalty = 0.0;
 
     for (size_t i = 0; i < neg->count; i++) {
-        evocore_failure_record_t *record = neg->failures[i];
+        evocore_failure_record_t *record = &neg->failures[i];
 
         if (record->is_active) {
             stats_out->active_count++;
@@ -624,7 +623,7 @@ size_t evocore_negative_learning_active_count(const evocore_negative_learning_t 
 
     size_t active = 0;
     for (size_t i = 0; i < neg->count; i++) {
-        if (neg->failures[i]->is_active) {
+        if (neg->failures[i].is_active) {
             active++;
         }
     }
@@ -635,7 +634,7 @@ void evocore_negative_learning_clear(evocore_negative_learning_t *neg) {
     if (!neg) return;
 
     for (size_t i = 0; i < neg->count; i++) {
-        failure_record_free(neg->failures[i]);
+        failure_record_clear(&neg->failures[i]);
     }
 
     neg->count = 0;

@@ -36,10 +36,9 @@
 #include "evocore/arena.h"
 #include "evocore/memory.h"
 #include "evocore/weighted.h"
-#include "evocore/context.h"
+#include "evocore/context.h"   // Includes negative.h
 #include "evocore/temporal.h"
 #include "evocore/exploration.h"
 #include "evocore/synthesis.h"
-#include "evocore/negative.h"
 
 #endif /* EVOCORE_H */

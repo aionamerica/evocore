@@ -14,6 +14,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+#include <pthread.h>
 
 /*========================================================================
  * Constants
@@ -914,4 +915,297 @@ bool evocore_context_merge(
     }
 
     return true;
+}
+
+/*========================================================================
+ * Negative Learning Integration
+ *========================================================================*/
+
+/* Global negative learning system - shared across all contexts */
+static evocore_negative_learning_t *g_negative_learning = NULL;
+static bool g_negative_enabled = false;
+static pthread_rwlock_t g_negative_lock = PTHREAD_RWLOCK_INITIALIZER;
+
+/**
+ * Initialize negative learning for context system
+ */
+bool evocore_context_negative_init(
+    size_t capacity,
+    double base_penalty,
+    double decay_rate
+) {
+    pthread_rwlock_wrlock(&g_negative_lock);
+
+    if (g_negative_learning) {
+        pthread_rwlock_unlock(&g_negative_lock);
+        return true; /* Already initialized */
+    }
+
+    g_negative_learning = calloc(1, sizeof(evocore_negative_learning_t));
+    if (!g_negative_learning) {
+        pthread_rwlock_unlock(&g_negative_lock);
+        return false;
+    }
+
+    evocore_error_t err = evocore_negative_learning_init(
+        g_negative_learning,
+        capacity,
+        base_penalty,
+        decay_rate
+    );
+
+    if (err != EVOCORE_OK) {
+        free(g_negative_learning);
+        g_negative_learning = NULL;
+        pthread_rwlock_unlock(&g_negative_lock);
+        return false;
+    }
+
+    g_negative_enabled = true;
+    pthread_rwlock_unlock(&g_negative_lock);
+    return true;
+}
+
+/**
+ * Cleanup negative learning system
+ */
+void evocore_context_negative_shutdown(void) {
+    pthread_rwlock_wrlock(&g_negative_lock);
+
+    if (g_negative_learning) {
+        evocore_negative_learning_cleanup(g_negative_learning);
+        free(g_negative_learning);
+        g_negative_learning = NULL;
+    }
+
+    g_negative_enabled = false;
+    pthread_rwlock_unlock(&g_negative_lock);
+}
+
+/**
+ * Check if negative learning is enabled
+ */
+bool evocore_context_negative_is_enabled(void) {
+    pthread_rwlock_rdlock(&g_negative_lock);
+    bool enabled = g_negative_enabled;
+    pthread_rwlock_unlock(&g_negative_lock);
+    return enabled;
+}
+
+/**
+ * Get the global negative learning instance
+ */
+evocore_negative_learning_t* evocore_context_get_negative(void) {
+    pthread_rwlock_rdlock(&g_negative_lock);
+    evocore_negative_learning_t *neg = g_negative_learning;
+    pthread_rwlock_unlock(&g_negative_lock);
+    return neg;
+}
+
+/**
+ * Record a failure with context key
+ */
+bool evocore_context_record_failure(
+    evocore_context_system_t *system,
+    const char *context_key,
+    const evocore_genome_t *genome,
+    double fitness,
+    evocore_failure_severity_t severity,
+    int generation
+) {
+    (void)system;
+
+    if (!context_key || !genome) {
+        return false;
+    }
+
+    pthread_rwlock_rdlock(&g_negative_lock);
+
+    if (!g_negative_learning || !g_negative_enabled) {
+        pthread_rwlock_unlock(&g_negative_lock);
+        return false;
+    }
+
+    evocore_error_t err = evocore_negative_learning_record_failure_severity(
+        g_negative_learning,
+        genome,
+        fitness,
+        severity,
+        generation
+    );
+
+    pthread_rwlock_unlock(&g_negative_lock);
+    return (err == EVOCORE_OK);
+}
+
+/**
+ * Check penalty for genome in specific context
+ */
+bool evocore_context_check_penalty(
+    const evocore_context_system_t *system,
+    const char *context_key,
+    const evocore_genome_t *genome,
+    double *penalty_out
+) {
+    (void)system;
+    (void)context_key;
+
+    if (!genome || !penalty_out) {
+        return false;
+    }
+
+    pthread_rwlock_rdlock(&g_negative_lock);
+
+    if (!g_negative_learning || !g_negative_enabled) {
+        pthread_rwlock_unlock(&g_negative_lock);
+        *penalty_out = 0.0;
+        return false;
+    }
+
+    evocore_error_t err = evocore_negative_learning_check_penalty(
+        g_negative_learning,
+        genome,
+        penalty_out
+    );
+
+    pthread_rwlock_unlock(&g_negative_lock);
+    return (err == EVOCORE_OK);
+}
+
+/**
+ * Check if a genome should be forbidden from sampling
+ */
+bool evocore_context_is_forbidden(
+    const evocore_context_system_t *system,
+    const char *context_key,
+    const evocore_genome_t *genome,
+    double threshold
+) {
+    (void)system;
+    (void)context_key;
+
+    if (!genome) {
+        return false;
+    }
+
+    pthread_rwlock_rdlock(&g_negative_lock);
+
+    if (!g_negative_learning || !g_negative_enabled) {
+        pthread_rwlock_unlock(&g_negative_lock);
+        return false;
+    }
+
+    bool forbidden = evocore_negative_learning_is_forbidden(
+        g_negative_learning,
+        genome,
+        threshold
+    );
+
+    pthread_rwlock_unlock(&g_negative_lock);
+    return forbidden;
+}
+
+/**
+ * Get negative learning statistics for a context
+ */
+bool evocore_context_get_negative_stats(
+    const evocore_context_system_t *system,
+    const char *context_key,
+    evocore_negative_stats_t *stats_out
+) {
+    (void)system;
+    (void)context_key;
+
+    if (!stats_out) {
+        return false;
+    }
+
+    pthread_rwlock_rdlock(&g_negative_lock);
+
+    if (!g_negative_learning || !g_negative_enabled) {
+        pthread_rwlock_unlock(&g_negative_lock);
+        return false;
+    }
+
+    evocore_error_t err = evocore_negative_learning_stats(g_negative_learning, stats_out);
+
+    pthread_rwlock_unlock(&g_negative_lock);
+    return (err == EVOCORE_OK);
+}
+
+/**
+ * Decay penalties in negative learning system
+ */
+void evocore_context_negative_decay(int generations_passed) {
+    pthread_rwlock_wrlock(&g_negative_lock);
+
+    if (g_negative_learning && g_negative_enabled) {
+        evocore_negative_learning_decay(g_negative_learning, generations_passed);
+    }
+
+    pthread_rwlock_unlock(&g_negative_lock);
+}
+
+/**
+ * Prune old/inactive failure records
+ */
+void evocore_context_negative_prune(
+    double min_penalty,
+    int max_age_generations
+) {
+    pthread_rwlock_wrlock(&g_negative_lock);
+
+    if (g_negative_learning && g_negative_enabled) {
+        evocore_negative_learning_prune(
+            g_negative_learning,
+            min_penalty,
+            max_age_generations
+        );
+    }
+
+    pthread_rwlock_unlock(&g_negative_lock);
+}
+
+/**
+ * Get negative learning statistics as JSON
+ */
+int evocore_context_negative_stats_json(char *buffer, size_t buffer_size) {
+    if (!buffer || buffer_size == 0) {
+        return 0;
+    }
+
+    pthread_rwlock_rdlock(&g_negative_lock);
+
+    if (!g_negative_learning || !g_negative_enabled) {
+        pthread_rwlock_unlock(&g_negative_lock);
+        return snprintf(buffer, buffer_size, "{\"enabled\":false}");
+    }
+
+    evocore_negative_stats_t stats;
+    evocore_negative_learning_stats(g_negative_learning, &stats);
+
+    int written = snprintf(buffer, buffer_size,
+        "{"
+        "\"enabled\":true,"
+        "\"total_count\":%zu,"
+        "\"active_count\":%zu,"
+        "\"mild_count\":%zu,"
+        "\"moderate_count\":%zu,"
+        "\"severe_count\":%zu,"
+        "\"fatal_count\":%zu,"
+        "\"avg_penalty\":%.6g,"
+        "\"max_penalty\":%.6g"
+        "}",
+        stats.total_count,
+        stats.active_count,
+        stats.mild_count,
+        stats.moderate_count,
+        stats.severe_count,
+        stats.fatal_count,
+        stats.avg_penalty,
+        stats.max_penalty
+    );
+
+    pthread_rwlock_unlock(&g_negative_lock);
+    return written;
 }
