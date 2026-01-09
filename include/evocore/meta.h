@@ -4,6 +4,7 @@
 #include "evocore/genome.h"
 #include "evocore/domain.h"
 #include "evocore/error.h"
+#include <stddef.h>
 
 /*========================================================================
  * Meta-Evolution Layer
@@ -110,6 +111,28 @@ typedef struct {
 
     /** Meta-level convergence threshold (0.001 - 0.1) */
     double meta_convergence_threshold;
+
+    /* ========================================================================
+     * NEGATIVE LEARNING (NEW)
+     * ======================================================================== */
+
+    /** Enable negative learning (true/false) */
+    bool negative_learning_enabled;
+
+    /** Influence of negative learning on selection (0.0 - 1.0) */
+    double negative_penalty_weight;
+
+    /** How fast penalties decay per generation (0.0 - 0.2) */
+    double negative_decay_rate;
+
+    /** Maximum failures stored per context (100 - 5000) */
+    size_t negative_capacity;
+
+    /** Genome similarity threshold for matching (0.5 - 0.95) */
+    double negative_similarity_threshold;
+
+    /** Minimum penalty before forbidding sampling (0.3 - 0.8) */
+    double negative_forbidden_threshold;
 
 } evocore_meta_params_t;
 

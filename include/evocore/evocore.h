@@ -40,5 +40,6 @@
 #include "evocore/temporal.h"
 #include "evocore/exploration.h"
 #include "evocore/synthesis.h"
+#include "evocore/negative.h"
 
 #endif /* EVOCORE_H */

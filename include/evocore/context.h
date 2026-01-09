@@ -21,6 +21,16 @@
 #include <time.h>
 
 /*========================================================================
+ * Forward Declarations
+ *========================================================================*/
+typedef struct evocore_negative_learning_t evocore_negative_learning_t;
+typedef struct evocore_genome_t evocore_genome_t;
+typedef struct evocore_negative_stats_s evocore_negative_stats_t;
+
+/* Failure severity as int for forward declaration compatibility */
+typedef int evocore_failure_severity_t;
+
+/*========================================================================
  * Data Structures
  *========================================================================*/
 
@@ -35,6 +45,7 @@ typedef struct {
     size_t value_count;      /* Number of possible values */
     char **values;           /* Array of value strings (allocated) */
 } evocore_context_dimension_t;
+
 
 /**
  * Context statistics
@@ -52,6 +63,11 @@ typedef struct {
     size_t total_experiences;        /* Total number of updates */
     double avg_fitness;              /* Average fitness of all updates */
     double best_fitness;             /* Best fitness seen */
+
+    /* Negative Learning */
+    evocore_negative_learning_t *negative;  /* Per-context negative learning */
+    size_t failure_count;                   /* Failures in this context */
+    double avg_failure_fitness;             /* Average failure fitness */
 } evocore_context_stats_t;
 
 /**
@@ -394,6 +410,80 @@ bool evocore_context_load_json(
 bool evocore_context_export_csv(
     const evocore_context_system_t *system,
     const char *filepath
+);
+
+/*========================================================================
+ * Negative Learning Integration
+ *========================================================================*/
+
+/**
+ * Record failure in context
+ *
+ * Records a failed outcome for the given context.
+ *
+ * @param system Context system
+ * @param context_key Pre-built context key
+ * @param genome Failed genome
+ * @param fitness Fitness value (typically negative)
+ * @param severity Failure severity
+ * @param generation Current generation
+ * @return true on success
+ */
+bool evocore_context_record_failure(
+    evocore_context_system_t *system,
+    const char *context_key,
+    const evocore_genome_t *genome,
+    double fitness,
+    evocore_failure_severity_t severity,
+    int generation
+);
+
+/**
+ * Check penalty for genome in context
+ *
+ * Returns the penalty score for a genome in the given context.
+ *
+ * @param system Context system
+ * @param context_key Context key
+ * @param genome Genome to check
+ * @param penalty_out Output: penalty score (0.0-1.0)
+ * @return true on success
+ */
+bool evocore_context_check_penalty(
+    const evocore_context_system_t *system,
+    const char *context_key,
+    const evocore_genome_t *genome,
+    double *penalty_out
+);
+
+/**
+ * Check if genome should be forbidden in context
+ *
+ * @param system Context system
+ * @param context_key Context key
+ * @param genome Genome to check
+ * @param threshold Penalty threshold
+ * @return true if genome should be forbidden
+ */
+bool evocore_context_is_forbidden(
+    const evocore_context_system_t *system,
+    const char *context_key,
+    const evocore_genome_t *genome,
+    double threshold
+);
+
+/**
+ * Get negative learning stats for context
+ *
+ * @param system Context system
+ * @param context_key Context key
+ * @param stats_out Output: negative learning statistics
+ * @return true on success
+ */
+bool evocore_context_get_negative_stats(
+    const evocore_context_system_t *system,
+    const char *context_key,
+    evocore_negative_stats_t *stats_out
 );
 
 /*========================================================================
