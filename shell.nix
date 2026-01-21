@@ -2,33 +2,41 @@
 
 pkgs.mkShell {
   buildInputs = with pkgs; [
-    # Base build tools
+    # C build tools
     gcc
     gnumake
-    # CUDA toolkit
-    cudaPackages.cudat
-    cudaPackages.cuda_cccl
-    cudaPackages.cudnn
-    # Math libraries
+    pkg-config
+
+    # C standard library
     glibc
-    # Development tools
+
+    # Development and debugging tools
     valgrind
     gdb
-    # Optional: GPU monitoring
-    cudaPackages.nsight_compute
-    cudaPackages.nsight_systems
+    clang-tools  # For clang-format, clang-tidy
+
+    # Testing
+    check  # C unit testing framework
   ];
 
-  # CUDA environment variables
   shellHook = ''
-    export CUDA_HOME=${pkgs.cudaPackages.cudat}
-    export PATH=$CUDA_HOME/bin:$PATH
-    export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
-    export EVOCORE_HAVE_CUDA=1
-    echo "evocore development environment with CUDA loaded"
-    echo "CUDA_HOME: $CUDA_HOME"
+    echo ""
+    echo "╔════════════════════════════════════════════╗"
+    echo "║     Evocore C Library - Dev Environment   ║"
+    echo "║     Pure C Context Learning System        ║"
+    echo "╚════════════════════════════════════════════╝"
+    echo ""
+    echo "🔨 Build:"
+    echo "   make              # Build static library"
+    echo "   make libevocore.so   # Build shared library"
+    echo "   make clean        # Clean build"
+    echo ""
+    echo "🧪 Test:"
+    echo "   make test         # Run tests (if available)"
+    echo ""
+    echo "📦 Output:"
+    echo "   build/libevocore.a   # Static library"
+    echo "   build/libevocore.so  # Shared library (for Python FFI)"
+    echo ""
   '';
-
-  # Hardening disable for CUDA
-  hardeningDisable = [ "all" ];
 }

@@ -76,8 +76,9 @@ SRCS := $(SRC_DIR)/error.c \
 # Object files
 OBJS := $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 
-# Library
+# Libraries
 LIB := $(BUILD_DIR)/libevocore.a
+SHARED_LIB := $(BUILD_DIR)/libevocore.so
 
 # Examples
 EXAMPLES := $(BUILD_DIR)/sphere_function \
@@ -127,9 +128,9 @@ all: $(LIB) examples
 $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)
 
-# Library object files
+# Library object files (with -fPIC for shared library support)
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) $(INCLUDES) -fPIC -c $< -o $@
 
 # CUDA object files
 $(BUILD_DIR)/cuda_%.o: $(SRC_DIR)/cuda/%.cu | $(BUILD_DIR)
@@ -139,6 +140,15 @@ $(BUILD_DIR)/cuda_%.o: $(SRC_DIR)/cuda/%.cu | $(BUILD_DIR)
 $(LIB): $(OBJS)
 	ar rcs $@ $^
 	@echo "Built library: $@"
+
+# Build shared library
+$(SHARED_LIB): $(OBJS)
+	$(CC) -shared -fPIC -o $@ $^ $(LDFLAGS)
+	@echo "Built shared library: $@"
+
+# Convenience target for shared library
+.PHONY: libevocore.so
+libevocore.so: $(SHARED_LIB)
 
 # Build examples
 .PHONY: examples
