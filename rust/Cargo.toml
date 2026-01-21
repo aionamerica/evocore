@@ -1,0 +1,21 @@
+[package]
+name = "evocore-sys"
+version = "0.1.0"
+edition = "2021"
+description = "Rust FFI bindings for EvoCore meta-evolutionary framework"
+license = "MIT"
+
+[features]
+default = []
+evocore = []
+
+[build-dependencies]
+cc = "1.0"
+
+[dependencies]
+libc = "0.2"
+rand = "0.8"
+
+[lib]
+name = "evocore_sys"
+crate-type = ["rlib", "cdylib"]
