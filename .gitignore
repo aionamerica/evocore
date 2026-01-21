@@ -78,3 +78,7 @@ valgrind-*.log
 # Editor backup files
 *~
 \#*\#
+
+# Rust
+rust/target/
+Cargo.lock
