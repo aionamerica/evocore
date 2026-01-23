@@ -4,10 +4,12 @@ Statistics and monitoring for evocore Python bindings.
 Provides evolution statistics tracking and progress reporting.
 """
 
-from typing import Optional, Callable, Any, Dict
+from typing import Optional, Callable, Any, Dict, TYPE_CHECKING
 from dataclasses import dataclass
-from ..core.population import Population
 from .error import check_error, EvocoreError
+
+if TYPE_CHECKING:
+    from ..core.population import Population
 
 
 @dataclass
@@ -72,12 +74,12 @@ class Stats:
         if hasattr(self, '_stats') and self._stats is not None:
             self._lib.evocore_stats_free(self._stats)
 
-    def update(self, population: Population) -> None:
+    def update(self, population: "Population") -> None:
         """
         Update statistics from population.
 
         Args:
-            population: Population to gather stats from
+            population: "Population" to gather stats from
         """
         err = self._lib.evocore_stats_update(self._stats, population._pop)
         check_error(err, self._lib)
@@ -264,12 +266,12 @@ def print_progress(stats: Stats) -> None:
           f"avg={stats.avg_fitness:.6f}, div={stats.diversity:.4f}")
 
 
-def compute_diversity(population: Population) -> float:
+def compute_diversity(population: "Population") -> float:
     """
     Compute population diversity.
 
     Args:
-        population: Population to analyze
+        population: "Population" to analyze
 
     Returns:
         Diversity measure
@@ -278,12 +280,12 @@ def compute_diversity(population: Population) -> float:
     return lib.evocore_stats_diversity(population._pop)
 
 
-def fitness_distribution(population: Population) -> Dict[str, float]:
+def fitness_distribution(population: "Population") -> Dict[str, float]:
     """
     Get fitness distribution statistics.
 
     Args:
-        population: Population to analyze
+        population: "Population" to analyze
 
     Returns:
         Dictionary with min, max, mean, stddev

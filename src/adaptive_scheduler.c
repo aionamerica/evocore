@@ -90,13 +90,13 @@ evocore_adaptive_scheduler_t* evocore_adaptive_scheduler_create(
     const evocore_meta_params_t *initial_params
 ) {
     if (max_generations == 0) {
-        evocore_set_error(EVOCORE_ERR_INVALID_ARG, "max_generations must be > 0");
+        evocore_log_error("max_generations must be > 0");
         return NULL;
     }
 
     evocore_adaptive_scheduler_t *scheduler = evocore_malloc(sizeof(evocore_adaptive_scheduler_t));
     if (!scheduler) {
-        evocore_set_error(EVOCORE_ERR_OUT_OF_MEMORY, "Failed to allocate scheduler");
+        evocore_log_error( "Failed to allocate scheduler");
         return NULL;
     }
 
@@ -112,7 +112,7 @@ evocore_adaptive_scheduler_t* evocore_adaptive_scheduler_create(
     scheduler->fitness_history = evocore_calloc(scheduler->history_window_size, sizeof(double));
     if (!scheduler->fitness_history) {
         evocore_free(scheduler);
-        evocore_set_error(EVOCORE_ERR_OUT_OF_MEMORY, "Failed to allocate fitness history");
+        evocore_log_error( "Failed to allocate fitness history");
         return NULL;
     }
 
@@ -167,7 +167,7 @@ evocore_adaptive_scheduler_t* evocore_adaptive_scheduler_create(
     scheduler->stagnation_expansion_factor = 1.5;
     scheduler->enable_population_contraction = true;
 
-    evocore_log(LOG_INFO, "Adaptive scheduler created: max_gen=%zu, init_mut=%.3f",
+    evocore_log_info( "Adaptive scheduler created: max_gen=%zu, init_mut=%.3f",
                 max_generations, scheduler->initial_mutation_rate);
 
     return scheduler;
@@ -430,7 +430,7 @@ evocore_error_t evocore_adaptive_scheduler_trigger_recovery(
 ) {
     if (!scheduler) return EVOCORE_ERR_NULL_PTR;
 
-    evocore_log(LOG_INFO, "Stagnation recovery triggered at generation %zu", scheduler->current_generation);
+    evocore_log_info( "Stagnation recovery triggered at generation %zu", scheduler->current_generation);
 
     /* Boost mutation rate */
     scheduler->current_mutation_rate *= scheduler->stagnation_boost_factor;
@@ -455,15 +455,15 @@ evocore_error_t evocore_adaptive_scheduler_diversity_intervention(
     if (diversity < 0.1) {
         /* Aggressive intervention */
         snprintf(out_action, action_size, "ADD_RANDOM_20PCT");
-        evocore_log(LOG_WARN, "Diversity critical (%.3f): Adding 20%% random individuals", diversity);
+        evocore_log_warn( "Diversity critical (%.3f): Adding 20%% random individuals", diversity);
     } else if (diversity < 0.2) {
         /* Moderate intervention */
         snprintf(out_action, action_size, "ADD_RANDOM_10PCT");
-        evocore_log(LOG_WARN, "Diversity low (%.3f): Adding 10%% random individuals", diversity);
+        evocore_log_warn( "Diversity low (%.3f): Adding 10%% random individuals", diversity);
     } else if (diversity < 0.3) {
         /* Mild intervention */
         snprintf(out_action, action_size, "INCREASE_MUTATION");
-        evocore_log(LOG_INFO, "Diversity below target (%.3f): Increasing mutation rate", diversity);
+        evocore_log_info( "Diversity below target (%.3f): Increasing mutation rate", diversity);
         scheduler->current_mutation_rate *= scheduler->diversity_boost_factor;
     } else {
         /* No intervention needed */

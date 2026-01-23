@@ -104,7 +104,7 @@ void evocore_memory_dump_stats(void);
 
 // Arena allocator
 typedef struct {
-    void *buffer;
+    char *buffer;
     size_t capacity;
     size_t offset;
     size_t alignment;
@@ -135,7 +135,7 @@ typedef struct {
 } evocore_genome_t;
 
 typedef struct {
-    evocore_genome_t genome;
+    evocore_genome_t *genome;
     double fitness;
 } evocore_individual_t;
 
@@ -218,11 +218,11 @@ size_t evocore_population_evaluate(evocore_population_t *pop, evocore_fitness_fu
 // ==========================================================================
 
 typedef struct {
-    evocore_error_t (*random_init)(evocore_genome_t *genome, unsigned int *seed);
-    evocore_error_t (*mutate)(evocore_genome_t *genome, double rate, unsigned int *seed);
-    evocore_error_t (*crossover)(const evocore_genome_t *p1, const evocore_genome_t *p2,
-                                  evocore_genome_t *c1, evocore_genome_t *c2, unsigned int *seed);
-    double (*diversity)(const evocore_genome_t *a, const evocore_genome_t *b);
+    void (*random_init)(evocore_genome_t *genome, void *context);
+    void (*mutate)(evocore_genome_t *genome, double rate, void *context);
+    void (*crossover)(const evocore_genome_t *parent1, const evocore_genome_t *parent2,
+                      evocore_genome_t *child1, evocore_genome_t *child2, void *context);
+    double (*diversity)(const evocore_genome_t *a, const evocore_genome_t *b, void *context);
 } evocore_genome_ops_t;
 
 typedef struct {
@@ -233,9 +233,9 @@ typedef struct {
     evocore_fitness_func_t fitness;
     void *user_context;
     // Callbacks
-    evocore_error_t (*serialize)(const evocore_genome_t *genome, char **buffer, size_t *size);
-    evocore_error_t (*deserialize)(const char *buffer, size_t size, evocore_genome_t *genome);
-    void (*print_stats)(const evocore_population_t *pop);
+    int (*serialize_genome)(const evocore_genome_t *genome, char *buffer, size_t size, void *context);
+    evocore_error_t (*deserialize_genome)(const char *buffer, evocore_genome_t *genome, void *context);
+    int (*get_statistics)(const evocore_genome_t *genome, char *buffer, size_t size, void *context);
 } evocore_domain_t;
 
 evocore_error_t evocore_domain_registry_init(void);
@@ -304,15 +304,15 @@ bool evocore_weighted_from_json(const char *json, evocore_weighted_stats_t *stat
 // ==========================================================================
 
 typedef enum {
-    EVOCORE_SEVERITY_NONE = 0,
-    EVOCORE_SEVERITY_MILD = 1,
-    EVOCORE_SEVERITY_MODERATE = 2,
-    EVOCORE_SEVERITY_SEVERE = 3,
-    EVOCORE_SEVERITY_FATAL = 4
+    EVOCORE_FAILURE_NONE = 0,
+    EVOCORE_FAILURE_MILD = 1,
+    EVOCORE_FAILURE_MODERATE = 2,
+    EVOCORE_FAILURE_SEVERE = 3,
+    EVOCORE_FAILURE_FATAL = 4
 } evocore_failure_severity_t;
 
 typedef struct {
-    evocore_genome_t genome;
+    evocore_genome_t *genome;
     double fitness;
     evocore_failure_severity_t severity;
     int generation;
@@ -330,10 +330,9 @@ typedef struct {
     double base_penalty;
     double repeat_multiplier;
     double decay_rate;
-    double severity_thresholds[4];
+    double thresholds[4];
     double similarity_threshold;
-    int cleanup_interval;
-    int last_cleanup_generation;
+    time_t last_cleanup;
     int current_generation;
 } evocore_negative_learning_t;
 
@@ -402,9 +401,9 @@ evocore_failure_severity_t evocore_severity_from_string(const char *str);
 // ==========================================================================
 
 typedef struct {
-    const char *name;
+    char *name;
     size_t value_count;
-    const char **values;
+    char **values;
 } evocore_context_dimension_t;
 
 typedef struct {
@@ -521,7 +520,6 @@ typedef struct {
     size_t sample_count;
     double avg_fitness;
     double best_fitness;
-    double worst_fitness;
 } evocore_temporal_bucket_t;
 
 typedef struct {
@@ -533,7 +531,7 @@ typedef struct {
 
 typedef struct {
     char *key;
-    evocore_temporal_list_t *temporal_list;
+    evocore_temporal_list_t *list;
 } evocore_temporal_key_t;
 
 typedef struct {
@@ -615,9 +613,9 @@ typedef struct {
     double fitness_threshold_for_breeding;
 
     // Population dynamics
-    size_t target_population_size;
-    size_t min_population_size;
-    size_t max_population_size;
+    int target_population_size;
+    int min_population_size;
+    int max_population_size;
 
     // Learning
     double learning_rate;
@@ -647,17 +645,16 @@ typedef struct {
 typedef struct {
     evocore_meta_params_t params;
     double meta_fitness;
-    size_t generation;
+    int generation;
     double *fitness_history;
+    size_t history_size;
     size_t history_capacity;
-    size_t history_count;
 } evocore_meta_individual_t;
 
 typedef struct {
-    evocore_meta_individual_t *individuals;
-    size_t count;
-    size_t capacity;
-    size_t current_generation;
+    evocore_meta_individual_t individuals[20];  // EVOCORE_MAX_META_INDIVIDUALS
+    int count;
+    int current_generation;
     evocore_meta_params_t best_params;
     double best_meta_fitness;
     bool initialized;
@@ -723,10 +720,11 @@ typedef struct {
     double cooling_rate;
     double ucb_c;
     // Adaptive tracking
-    double last_best_fitness;
-    size_t stagnant_generations;
-    size_t improvement_count;
-    size_t total_generations;
+    double best_fitness;
+    double recent_best;
+    size_t stagnation_count;
+    size_t total_evaluations;
+    time_t start_time;
 } evocore_exploration_t;
 
 typedef struct {
@@ -864,40 +862,47 @@ typedef enum {
 } evocore_evolution_phase_t;
 
 typedef struct {
-    // Configuration
-    size_t max_generations;
-    evocore_meta_params_t initial_params;
-
-    // Progress tracking
+    // Progress Tracking
     size_t current_generation;
-    double progress;
-    evocore_evolution_phase_t phase;
+    size_t max_generations;
+    evocore_evolution_phase_t current_phase;
 
-    // Fitness tracking
-    double best_fitness;
-    double avg_fitness;
-    double fitness_variance;
+    // Convergence Metrics
     double *fitness_history;
-    size_t history_capacity;
-    size_t history_count;
+    size_t history_window_size;
+    size_t history_position;
+    double best_fitness_ever;
+    size_t generations_since_improvement;
+    size_t stagnation_threshold;
 
-    // Convergence tracking
-    size_t stagnant_generations;
-    double improvement_rate;
-    double last_improvement_generation;
+    // Diversity Tracking
+    double current_diversity;
+    double min_diversity_threshold;
+    double avg_diversity;
 
-    // Diversity tracking
-    double diversity;
-    double diversity_trend;
-
-    // Adaptive parameters
+    // Adaptive Parameters
     double current_mutation_rate;
-    double current_selection_pressure;
+    double initial_mutation_rate;
+    double min_mutation_rate;
+    double current_kill_percentage;
+    double current_breed_percentage;
     size_t current_population_size;
 
-    // Recovery state
-    bool in_recovery_mode;
-    size_t recovery_generations_remaining;
+    // Scheduling Parameters
+    double decay_alpha;
+    double stagnation_boost_factor;
+    double diversity_boost_factor;
+    double high_variance_kill_pct;
+    double medium_variance_kill_pct;
+    double low_variance_kill_pct;
+    double high_variance_threshold;
+    double low_variance_threshold;
+
+    // Population Sizing
+    size_t initial_population_size;
+    size_t final_population_size;
+    double stagnation_expansion_factor;
+    bool enable_population_contraction;
 } evocore_adaptive_scheduler_t;
 
 // Lifecycle
@@ -939,47 +944,51 @@ void evocore_adaptive_scheduler_print_stats(const evocore_adaptive_scheduler_t *
 
 typedef struct {
     // Generation info
-    size_t generation;
+    size_t current_generation;
     size_t total_generations;
 
     // Fitness tracking
-    double best_fitness;
-    double avg_fitness;
-    double worst_fitness;
-    double fitness_stddev;
-    double fitness_improvement;
+    double best_fitness_ever;
+    double worst_fitness_ever;
+    double best_fitness_current;
+    double avg_fitness_current;
+    double worst_fitness_current;
 
-    // Convergence
-    bool is_converged;
-    bool is_stagnant;
-    size_t stagnant_generations;
-
-    // Diversity
-    double diversity;
-    double diversity_trend;
+    // Convergence metrics
+    double fitness_improvement_rate;
+    double fitness_variance;
+    int stagnant_generations;
+    int convergence_streak;
 
     // Timing
-    double generation_time_ms;
     double total_time_ms;
-    double avg_eval_time_ms;
+    double generation_time_ms;
+    double eval_time_ms;
 
     // Operation counts
-    int64_t evaluation_count;
-    int64_t mutation_count;
-    int64_t crossover_count;
+    long long total_evaluations;
+    long long mutations_performed;
+    long long crossovers_performed;
 
     // Memory
-    size_t memory_used;
-    size_t peak_memory;
+    size_t memory_usage_bytes;
+
+    // Tracking options
+    bool track_memory;
+    bool track_timing;
+
+    // Status flags
+    bool converged;
+    bool stagnant;
+    bool diverse;
 } evocore_stats_t;
 
 typedef struct {
     double improvement_threshold;
-    size_t stagnation_generations;
+    int stagnation_generations;
     double diversity_threshold;
-    bool track_timing;
     bool track_memory;
-    bool track_diversity;
+    bool track_timing;
 } evocore_stats_config_t;
 
 typedef void (*evocore_progress_callback_t)(const evocore_stats_t *stats, void *user_data);
@@ -987,7 +996,7 @@ typedef void (*evocore_progress_callback_t)(const evocore_stats_t *stats, void *
 typedef struct {
     evocore_progress_callback_t callback;
     void *user_data;
-    size_t report_every_n_generations;
+    int report_every_n_generations;
     bool verbose;
 } evocore_progress_reporter_t;
 
@@ -1014,10 +1023,10 @@ void evocore_progress_print_console(const evocore_stats_t *stats, void *user_dat
 // ==========================================================================
 
 typedef enum {
-    EVOCORE_CONFIG_STRING = 0,
-    EVOCORE_CONFIG_INT = 1,
-    EVOCORE_CONFIG_DOUBLE = 2,
-    EVOCORE_CONFIG_BOOL = 3
+    EVOCORE_CONFIG_TYPE_STRING,
+    EVOCORE_CONFIG_TYPE_INT,
+    EVOCORE_CONFIG_TYPE_DOUBLE,
+    EVOCORE_CONFIG_TYPE_BOOL
 } evocore_config_type_t;
 
 typedef struct {
@@ -1046,9 +1055,9 @@ const evocore_config_entry_t* evocore_config_get_entry(const evocore_config_t *c
 // ==========================================================================
 
 typedef enum {
-    EVOCORE_SERIAL_JSON = 0,
-    EVOCORE_SERIAL_BINARY = 1,
-    EVOCORE_SERIAL_MSGPACK = 2
+    EVOCORE_SERIAL_FORMAT_JSON,
+    EVOCORE_SERIAL_FORMAT_BINARY,
+    EVOCORE_SERIAL_FORMAT_MSGPACK,
 } evocore_serial_format_t;
 
 typedef struct {
@@ -1059,25 +1068,29 @@ typedef struct {
 } evocore_serial_options_t;
 
 typedef struct {
-    uint32_t version;
-    time_t timestamp;
+    char version[16];
+    double timestamp;
     size_t population_size;
+    size_t population_capacity;
     size_t generation;
     double best_fitness;
     double avg_fitness;
+    bool has_meta_state;
     evocore_meta_params_t meta_params;
-    char *domain_name;
-    void *user_data;
+    char domain_name[64];
+    char *user_data;
     size_t user_data_size;
-    char *serialized_population;
-    size_t serialized_size;
+    char *population_data;
+    size_t population_data_size;
+    char *meta_data;
+    size_t meta_data_size;
 } evocore_checkpoint_t;
 
 typedef struct {
     bool enabled;
-    size_t every_n_generations;
-    char *directory;
-    size_t max_checkpoints;
+    int every_n_generations;
+    char directory[256];
+    int max_checkpoints;
     bool compress;
 } evocore_auto_checkpoint_config_t;
 
@@ -1141,15 +1154,15 @@ typedef struct evocore_parallel_ctx_t evocore_parallel_ctx_t;
 
 typedef struct {
     const char *name;
-    size_t count;
+    long long count;
     double total_time_ms;
     double min_time_ms;
     double max_time_ms;
 } evocore_perf_counter_t;
 
 typedef struct {
-    evocore_perf_counter_t *counters;
-    size_t count;
+    evocore_perf_counter_t counters[32];
+    int count;
     bool enabled;
 } evocore_perf_monitor_t;
 
@@ -1203,11 +1216,12 @@ typedef struct {
     int compute_capability_minor;
     int multiprocessor_count;
     int max_threads_per_block;
+    int max_threads_per_multiprocessor;
     bool available;
 } evocore_gpu_device_t;
 
 typedef struct {
-    evocore_genome_t **genomes;
+    const evocore_genome_t **genomes;
     double *fitnesses;
     size_t count;
     size_t genome_size;
@@ -1279,6 +1293,7 @@ ffi.set_source(
     "evocore._evocore",
     """
     #include "evocore/evocore.h"
+    #include "evocore/adaptive_scheduler.h"
     """,
     libraries=["evocore"],
     library_dirs=[EVOCORE_BUILD, "/usr/local/lib"],

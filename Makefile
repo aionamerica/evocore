@@ -34,13 +34,14 @@ else
     $(info "CUDA support: disabled (set CUDA=yes to enable)")
 endif
 
-# OpenMP support - enable with OMP=yes
+# OpenMP support - enabled by default, disable with OMP=no
+OMP ?= yes
 ifeq ($(OMP),yes)
     CFLAGS += -DOMP_SUPPORT -fopenmp
     LDFLAGS += -fopenmp
     $(info "OpenMP support: enabled")
 else
-    $(info "OpenMP support: disabled (set OMP=yes to enable)")
+    $(info "OpenMP support: disabled (OMP=no)")
 endif
 
 # Directories
@@ -59,6 +60,7 @@ SRCS := $(SRC_DIR)/error.c \
         $(SRC_DIR)/domain.c \
         $(SRC_DIR)/meta.c \
         $(SRC_DIR)/adaptive.c \
+        $(SRC_DIR)/adaptive_scheduler.c \
         $(SRC_DIR)/gpu.c \
         $(SRC_DIR)/optimize.c \
         $(SRC_DIR)/persist.c \

@@ -104,7 +104,7 @@ class ContextSystem:
         >>> params = ctx.sample(["BTC", "1h"], exploration=0.3)
     """
 
-    __slots__ = ('_system', '_ffi', '_lib', '_dimensions', '_param_count', '_owns_system')
+    __slots__ = ('_system', '_ffi', '_lib', '_dimensions', '_param_count', '_owns_system', '_dim_names', '_dim_values')
 
     def __init__(self, dimensions: List[Tuple[str, List[str]]], param_count: int,
                  *, _raw: bool = False):

@@ -212,6 +212,11 @@ evocore_error_t evocore_genome_randomize(evocore_genome_t *genome) {
         data[i] = (unsigned char)rand();
     }
 
+    /* Update size to reflect filled data if it was empty */
+    if (genome->size == 0) {
+        genome->size = len;
+    }
+
     return EVOCORE_OK;
 }
 

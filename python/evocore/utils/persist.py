@@ -4,21 +4,24 @@ Persistence utilities for evocore Python bindings.
 Provides checkpointing and serialization.
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from enum import IntEnum
 from datetime import datetime
-from ..core.genome import Genome
-from ..core.population import Population
-from ..meta.params import MetaParams
-from ..meta.population import MetaPopulation
 from .error import check_error, EvocoreError
+
+# Use TYPE_CHECKING to avoid circular imports
+if TYPE_CHECKING:
+    from ..core.genome import Genome
+    from ..core.population import Population
+    from ..meta.params import MetaParams
+    from ..meta.population import MetaPopulation
 
 
 class SerialFormat(IntEnum):
     """Serialization formats."""
-    JSON = 0
-    BINARY = 1
-    MSGPACK = 2
+    JSON = 0      # EVOCORE_SERIAL_FORMAT_JSON
+    BINARY = 1    # EVOCORE_SERIAL_FORMAT_BINARY
+    MSGPACK = 2   # EVOCORE_SERIAL_FORMAT_MSGPACK
 
 
 class SerialOptions:
@@ -88,14 +91,14 @@ class Checkpoint:
             self._lib.evocore_checkpoint_free(self._checkpoint)
 
     @property
-    def version(self) -> int:
+    def version(self) -> str:
         """Checkpoint version."""
-        return self._checkpoint.version
+        return self._ffi.string(self._checkpoint.version).decode()
 
     @property
     def timestamp(self) -> datetime:
         """Checkpoint creation time."""
-        return datetime.fromtimestamp(self._checkpoint.timestamp)
+        return datetime.fromtimestamp(int(self._checkpoint.timestamp))
 
     @property
     def population_size(self) -> int:
@@ -118,13 +121,13 @@ class Checkpoint:
         return self._checkpoint.avg_fitness
 
     @classmethod
-    def create(cls, population: Population, meta_pop: Optional[MetaPopulation] = None,
+    def create(cls, population: "Population", meta_pop: Optional["MetaPopulation"] = None,
                domain: Any = None) -> "Checkpoint":
         """
         Create checkpoint from current state.
 
         Args:
-            population: Population to checkpoint
+            population: "Population" to checkpoint
             meta_pop: Optional meta-population
             domain: Optional domain
 
@@ -178,14 +181,14 @@ class Checkpoint:
 
         return checkpoint
 
-    def restore(self, population: Population,
-                meta_pop: Optional[MetaPopulation] = None,
+    def restore(self, population: "Population",
+                meta_pop: Optional["MetaPopulation"] = None,
                 domain: Any = None) -> None:
         """
         Restore state from checkpoint.
 
         Args:
-            population: Population to restore into
+            population: "Population" to restore into
             meta_pop: Optional meta-population to restore
             domain: Optional domain
         """
@@ -237,7 +240,10 @@ class CheckpointManager:
         config = ffi.new("evocore_auto_checkpoint_config_t *")
         config.enabled = enabled
         config.every_n_generations = every_n
-        config.directory = ffi.new("char[]", directory.encode())
+        # directory is a fixed-size char[256] array
+        dir_bytes = directory.encode()[:255]  # truncate to fit
+        ffi.memmove(config.directory, dir_bytes, len(dir_bytes))
+        config.directory[len(dir_bytes)] = 0  # null-terminate
         config.max_checkpoints = max_checkpoints
         config.compress = compress
 
@@ -251,8 +257,8 @@ class CheckpointManager:
         if hasattr(self, '_manager') and self._manager is not None:
             self._lib.evocore_checkpoint_manager_destroy(self._manager)
 
-    def update(self, population: Population,
-               meta_pop: Optional[MetaPopulation] = None,
+    def update(self, population: "Population",
+               meta_pop: Optional["MetaPopulation"] = None,
                domain: Any = None) -> None:
         """
         Update checkpoint manager (may trigger checkpoint save).
