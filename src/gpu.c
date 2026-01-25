@@ -61,6 +61,9 @@ struct evocore_gpu_context_s {
 
     /* Performance stats */
     evocore_gpu_stats_t stats;
+#ifdef EVOCORE_HAVE_PTHREADS
+    pthread_mutex_t stats_lock;  /* Mutex for thread-safe stats updates */
+#endif
 
     /* Last error */
     char last_error[256];
@@ -80,6 +83,10 @@ evocore_gpu_context_t* evocore_gpu_init(void) {
     ctx->gpu_enabled = true;
     ctx->current_device = -1;
     ctx->max_batch_size = 1000;  /* Default for CPU */
+
+#ifdef EVOCORE_HAVE_PTHREADS
+    pthread_mutex_init(&ctx->stats_lock, NULL);
+#endif
 
 #ifdef EVOCORE_HAVE_CUDA
     /* Probe for CUDA devices */
@@ -133,6 +140,10 @@ void evocore_gpu_shutdown(evocore_gpu_context_t *ctx) {
         evocore_free(ctx);
         return;
     }
+
+#ifdef EVOCORE_HAVE_PTHREADS
+    pthread_mutex_destroy(&ctx->stats_lock);
+#endif
 
 #ifdef EVOCORE_HAVE_CUDA
     if (ctx->cuda_available) {
@@ -355,12 +366,18 @@ evocore_error_t evocore_gpu_evaluate_batch(evocore_gpu_context_t *ctx,
 
         /* If GPU evaluation failed, fall through to CPU */
         if (result->evaluated > 0) {
+#ifdef EVOCORE_HAVE_PTHREADS
+            pthread_mutex_lock(&ctx->stats_lock);
+#endif
             ctx->stats.total_evaluations += result->evaluated;
             ctx->stats.gpu_evaluations += result->evaluated;
             ctx->stats.total_gpu_time_ms += result->gpu_time_ms;
             ctx->stats.avg_gpu_time_ms = ctx->stats.total_gpu_time_ms /
                                          (ctx->stats.gpu_evaluations > 0 ?
                                           ctx->stats.gpu_evaluations : 1);
+#ifdef EVOCORE_HAVE_PTHREADS
+            pthread_mutex_unlock(&ctx->stats_lock);
+#endif
             return EVOCORE_OK;
         }
 #endif
@@ -424,13 +441,19 @@ evocore_error_t evocore_gpu_evaluate_batch(evocore_gpu_context_t *ctx,
     result->cpu_time_ms = end_time - start_time;
     result->used_gpu = false;
 
-    /* Update stats */
+    /* Update stats with thread safety */
+#ifdef EVOCORE_HAVE_PTHREADS
+    pthread_mutex_lock(&ctx->stats_lock);
+#endif
     ctx->stats.total_evaluations += result->evaluated;
     ctx->stats.cpu_evaluations += result->evaluated;
     ctx->stats.total_cpu_time_ms += result->cpu_time_ms;
     ctx->stats.avg_cpu_time_ms = ctx->stats.total_cpu_time_ms /
                                   (ctx->stats.cpu_evaluations > 0 ?
                                    ctx->stats.cpu_evaluations : 1);
+#ifdef EVOCORE_HAVE_PTHREADS
+    pthread_mutex_unlock(&ctx->stats_lock);
+#endif
 
     return EVOCORE_OK;
 }

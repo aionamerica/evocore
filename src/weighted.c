@@ -79,7 +79,12 @@ bool evocore_weighted_update(
     }
 
     stats->count++;
-    stats->variance = stats->m2 / stats->sum_weights;
+    /* Guard against division by zero */
+    if (stats->sum_weights > 0.0) {
+        stats->variance = stats->m2 / stats->sum_weights;
+    } else {
+        stats->variance = 0.0;
+    }
 
     return true;
 }
@@ -91,7 +96,8 @@ double evocore_weighted_mean(const evocore_weighted_stats_t *stats) {
 
 double evocore_weighted_std(const evocore_weighted_stats_t *stats) {
     if (!stats || stats->count < 2) return 0.0;
-    return sqrt(stats->variance);
+    /* Use fmax to prevent NaN from negative variance due to floating point errors */
+    return sqrt(fmax(0.0, stats->variance));
 }
 
 double evocore_weighted_variance(const evocore_weighted_stats_t *stats) {

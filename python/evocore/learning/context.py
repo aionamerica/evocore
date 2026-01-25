@@ -132,35 +132,43 @@ class ContextSystem:
         self._param_count = param_count
         self._owns_system = True
 
-        # Build C dimension array
+        # Build C dimension array with exception safety
         dim_array = ffi.new("evocore_context_dimension_t[]", len(dimensions))
 
         # Keep references to prevent GC
         self._dim_names = []
         self._dim_values = []
+        self._system = ffi.NULL  # Initialize to NULL for safe cleanup
 
-        for i, (name, values) in enumerate(dimensions):
-            # Allocate name
-            name_buf = ffi.new("char[]", name.encode())
-            self._dim_names.append(name_buf)
-            dim_array[i].name = name_buf
+        try:
+            for i, (name, values) in enumerate(dimensions):
+                # Allocate name
+                name_buf = ffi.new("char[]", name.encode())
+                self._dim_names.append(name_buf)
+                dim_array[i].name = name_buf
 
-            # Allocate values array
-            values_array = ffi.new("char*[]", len(values))
-            value_bufs = []
-            for j, v in enumerate(values):
-                v_buf = ffi.new("char[]", v.encode())
-                value_bufs.append(v_buf)
-                values_array[j] = v_buf
-            self._dim_values.append((values_array, value_bufs))
+                # Allocate values array
+                values_array = ffi.new("char*[]", len(values))
+                value_bufs = []
+                for j, v in enumerate(values):
+                    v_buf = ffi.new("char[]", v.encode())
+                    value_bufs.append(v_buf)
+                    values_array[j] = v_buf
+                self._dim_values.append((values_array, value_bufs))
 
-            dim_array[i].value_count = len(values)
-            dim_array[i].values = values_array
+                dim_array[i].value_count = len(values)
+                dim_array[i].values = values_array
 
-        self._system = lib.evocore_context_system_create(dim_array, len(dimensions), param_count)
+            self._system = lib.evocore_context_system_create(dim_array, len(dimensions), param_count)
 
-        if self._system == ffi.NULL:
-            raise EvocoreError("Failed to create context system")
+            if self._system == ffi.NULL:
+                raise EvocoreError("Failed to create context system")
+        except Exception:
+            # Cleanup on failure - cffi handles memory via GC, but clear refs
+            self._dim_names = []
+            self._dim_values = []
+            self._system = ffi.NULL
+            raise
 
     def __del__(self):
         """Clean up context system."""
@@ -312,8 +320,8 @@ class ContextSystem:
             context_bufs.append(buf)
             context_arr[i] = buf
 
-        out_key = self._ffi.new("char[256]")
-        success = self._lib.evocore_context_build_key(self._system, context_arr, out_key, 256)
+        out_key = self._ffi.new("char[1024]")  # Increased from 256 for longer context keys
+        success = self._lib.evocore_context_build_key(self._system, context_arr, out_key, 1024)
 
         if not success:
             # Fallback to Python implementation

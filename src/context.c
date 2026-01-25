@@ -252,6 +252,24 @@ evocore_context_system_t* evocore_context_system_create(
 
         for (size_t j = 0; j < dimensions[i].value_count; j++) {
             system->dimensions[i].values[j] = strdup(dimensions[i].values[j]);
+            if (!system->dimensions[i].values[j]) {
+                /* Cleanup on strdup failure */
+                for (size_t k = 0; k < j; k++) {
+                    free(system->dimensions[i].values[k]);
+                }
+                free(system->dimensions[i].values);
+                free(system->dimensions[i].name);
+                for (size_t k = 0; k < i; k++) {
+                    free(system->dimensions[k].name);
+                    for (size_t l = 0; l < system->dimensions[k].value_count; l++) {
+                        free(system->dimensions[k].values[l]);
+                    }
+                    free(system->dimensions[k].values);
+                }
+                free(system->dimensions);
+                free(system);
+                return NULL;
+            }
         }
     }
 
@@ -451,7 +469,9 @@ bool evocore_context_learn_key(
 
     /* Check for resize */
     if (table->count >= (size_t)(table->capacity * HASH_LOAD_FACTOR)) {
-        hash_resize(table, table->capacity * 2);
+        if (!hash_resize(table, table->capacity * 2)) {
+            evocore_log_warn("Hash table resize failed, continuing with current capacity");
+        }
     }
 
     /* Get or create entry */
@@ -673,6 +693,11 @@ size_t evocore_context_count(const evocore_context_system_t *system) {
     return table->count;
 }
 
+size_t evocore_context_get_param_count(const evocore_context_system_t *system) {
+    if (!system) return 0;
+    return system->param_count;
+}
+
 size_t evocore_context_get_keys(
     const evocore_context_system_t *system,
     char **out_keys,
@@ -852,18 +877,19 @@ static bool read_double(FILE *f, double *out_val) {
 
 /* Helper: Write uint64 */
 static bool write_uint64(FILE *f, uint64_t val) {
-    /* Write in network byte order */
-    uint64_t net = (((uint64_t)htonl(val & 0xFFFFFFFF)) << 32) |
-                    htonl((val >> 32) & 0xFFFFFFFF);
-    return fwrite(&net, sizeof(uint64_t), 1, f) == 1;
+    /* Write in big-endian (network) byte order: high 32 bits first, then low */
+    uint32_t high = htonl((uint32_t)(val >> 32));
+    uint32_t low = htonl((uint32_t)(val & 0xFFFFFFFF));
+    if (fwrite(&high, sizeof(uint32_t), 1, f) != 1) return false;
+    return fwrite(&low, sizeof(uint32_t), 1, f) == 1;
 }
 
 /* Helper: Read uint64 */
 static bool read_uint64(FILE *f, uint64_t *out_val) {
-    uint64_t net;
-    if (fread(&net, sizeof(uint64_t), 1, f) != 1) return false;
-    *out_val = (((uint64_t)ntohl(net & 0xFFFFFFFF)) << 32) |
-               ntohl((net >> 32) & 0xFFFFFFFF);
+    uint32_t high, low;
+    if (fread(&high, sizeof(uint32_t), 1, f) != 1) return false;
+    if (fread(&low, sizeof(uint32_t), 1, f) != 1) return false;
+    *out_val = ((uint64_t)ntohl(high) << 32) | ntohl(low);
     return true;
 }
 

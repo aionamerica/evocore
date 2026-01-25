@@ -358,6 +358,14 @@ void evocore_context_query_free(evocore_context_query_t *results);
 size_t evocore_context_count(const evocore_context_system_t *system);
 
 /**
+ * Get parameter count
+ *
+ * @param system Context system
+ * @return Number of parameters tracked per context
+ */
+size_t evocore_context_get_param_count(const evocore_context_system_t *system);
+
+/**
  * Get all context keys
  *
  * @param system Context system

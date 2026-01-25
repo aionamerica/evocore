@@ -344,7 +344,8 @@ size_t evocore_boltzmann_select(
     if (sum < 0.0001) {
         /* All values are the same or very low temperature */
         free(probs);
-        return (size_t)((double)rand_r(seed) / (double)RAND_MAX * count);
+        /* Use modulo to prevent out-of-bounds when rand_r() == RAND_MAX */
+        return (size_t)(rand_r(seed) % count);
     }
 
     /* Normalize and select */

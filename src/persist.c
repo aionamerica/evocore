@@ -341,6 +341,12 @@ evocore_error_t evocore_genome_deserialize(const char *buffer,
             return EVOCORE_ERR_INVALID_ARG;
         }
 
+        /* Validate data_size against buffer_size to prevent buffer overflow */
+        if (sizeof(evocore_binary_header_t) + header->data_size > buffer_size) {
+            evocore_log_error("Data size in header exceeds buffer size");
+            return EVOCORE_ERR_INVALID_ARG;
+        }
+
         /* Initialize genome */
         evocore_error_t err = evocore_genome_init(genome, header->data_size);
         if (err != EVOCORE_OK) {
@@ -458,6 +464,11 @@ evocore_error_t evocore_genome_load(const char *filepath,
 
     fseek(f, 0, SEEK_END);
     long file_size = ftell(f);
+    if (file_size == -1) {
+        evocore_log_error("ftell() failed");
+        fclose(f);
+        return EVOCORE_ERR_FILE_READ;
+    }
     fseek(f, 0, SEEK_SET);
 
     if (file_size <= 0) {
@@ -580,7 +591,7 @@ evocore_error_t evocore_population_serialize(const evocore_population_t *pop,
         /* Escape and write as string */
         json_write_raw(&writer, "\"");
         for (size_t j = 0; j < genome_size; j++) {
-            char escape[4];
+            char escape[8];  /* Increased from 4 to 8 for \xNN format (5 bytes + safety) */
             if (genome_buf[j] == '"') {
                 strcpy(escape, "\\\"");
             } else if (genome_buf[j] == '\\') {
@@ -725,6 +736,11 @@ evocore_error_t evocore_population_load(const char *filepath,
 
     fseek(f, 0, SEEK_END);
     long file_size = ftell(f);
+    if (file_size == -1) {
+        evocore_log_error("ftell() failed");
+        fclose(f);
+        return EVOCORE_ERR_FILE_READ;
+    }
     fseek(f, 0, SEEK_SET);
 
     if (file_size <= 0) {
@@ -1131,6 +1147,11 @@ evocore_error_t evocore_meta_load(const char *filepath,
 
     fseek(f, 0, SEEK_END);
     long file_size = ftell(f);
+    if (file_size == -1) {
+        evocore_log_error("ftell() failed");
+        fclose(f);
+        return EVOCORE_ERR_FILE_READ;
+    }
     fseek(f, 0, SEEK_SET);
 
     if (file_size <= 0) {
@@ -1323,6 +1344,11 @@ evocore_error_t evocore_checkpoint_load(const char *filepath,
 
     fseek(f, 0, SEEK_END);
     long file_size = ftell(f);
+    if (file_size == -1) {
+        evocore_log_error("ftell() failed");
+        fclose(f);
+        return EVOCORE_ERR_FILE_READ;
+    }
     fseek(f, 0, SEEK_SET);
 
     if (file_size <= 0) {

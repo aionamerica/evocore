@@ -510,6 +510,7 @@ bool evocore_temporal_compare_recent(
 ) {
     if (!system || !context_key || !out_drift) return false;
     if (param_count != system->param_count) return false;
+    if (param_count > 64) return false;  /* Bounds check for fixed-size local arrays */
     if (recent_buckets == 0 || recent_buckets >= system->retention_count) return false;
 
     hash_table_t *table = (hash_table_t*)system->internal;
@@ -555,6 +556,7 @@ bool evocore_temporal_detect_regime_change(
     double threshold
 ) {
     if (!system || !context_key) return false;
+    if (system->param_count > 64) return false;  /* Bounds check for fixed-size local array */
 
     double drift[64];
     if (!evocore_temporal_compare_recent(system, context_key, recent_buckets, drift, system->param_count)) {
@@ -645,6 +647,7 @@ bool evocore_temporal_sample_organic(
 ) {
     if (!system || !context_key || !out_parameters) return false;
     if (param_count != system->param_count) return false;
+    if (param_count > 64) return false;  /* Bounds check for fixed-size local array */
 
     /* Get organic mean */
     double organic_means[64];
@@ -715,6 +718,7 @@ bool evocore_temporal_sample_trend(
 ) {
     if (!system || !context_key || !out_parameters) return false;
     if (param_count != system->param_count) return false;
+    if (param_count > 64) return false;  /* Bounds check for fixed-size local arrays */
 
     /* Get trends */
     double slopes[64];

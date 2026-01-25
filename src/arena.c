@@ -38,6 +38,7 @@ evocore_error_t evocore_arena_init(evocore_arena_t *arena, size_t capacity) {
     arena->capacity = capacity;
     arena->offset = 0;
     arena->alignment = EVOCORE_ARENA_ALIGNMENT;
+    arena->owns_buffer = true;  /* We allocated the buffer */
 
     return EVOCORE_OK;
 }
@@ -53,6 +54,7 @@ evocore_error_t evocore_arena_init_with_buffer(evocore_arena_t *arena,
     arena->capacity = capacity;
     arena->offset = 0;
     arena->alignment = EVOCORE_ARENA_ALIGNMENT;
+    arena->owns_buffer = false;  /* External buffer, do not free */
 
     return EVOCORE_OK;
 }
@@ -62,16 +64,15 @@ void evocore_arena_cleanup(evocore_arena_t *arena) {
         return;
     }
 
-    /* Only free if we own the buffer */
-    /* We can't distinguish this, so we always free */
-    /* For external buffers, use arena_reset instead of cleanup */
-    if (arena->buffer) {
+    /* Only free if we own the buffer (allocated via arena_init) */
+    if (arena->owns_buffer && arena->buffer) {
         evocore_free(arena->buffer);
     }
 
     arena->buffer = NULL;
     arena->capacity = 0;
     arena->offset = 0;
+    arena->owns_buffer = false;
 }
 
 void* evocore_arena_alloc(evocore_arena_t *arena, size_t size) {

@@ -1284,8 +1284,10 @@ bool evocore_gpu_get_enabled(const evocore_gpu_context_t *ctx);
 # C Source Configuration (set_source)
 # =============================================================================
 
-# Find library paths
-EVOCORE_ROOT = os.environ.get('EVOCORE_ROOT', '/home/wao/Projects/Aion/evocore')
+# Find library paths - use relative path from this file if EVOCORE_ROOT not set
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_ROOT = os.path.abspath(os.path.join(_THIS_DIR, '..', '..', '..'))
+EVOCORE_ROOT = os.environ.get('EVOCORE_ROOT', _DEFAULT_ROOT)
 EVOCORE_BUILD = os.path.join(EVOCORE_ROOT, 'build')
 EVOCORE_INCLUDE = os.path.join(EVOCORE_ROOT, 'include')
 

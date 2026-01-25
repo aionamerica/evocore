@@ -301,7 +301,11 @@ double evocore_meta_individual_improvement_trend(const evocore_meta_individual_t
         sum_x2 += x * x;
     }
 
-    double slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x);
+    double denominator = n * sum_x2 - sum_x * sum_x;
+    if (fabs(denominator) < 0.0001) {
+        return 0.0;  /* Avoid division by zero */
+    }
+    double slope = (n * sum_xy - sum_x * sum_y) / denominator;
     return slope;
 }
 

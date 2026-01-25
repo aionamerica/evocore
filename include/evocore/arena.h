@@ -39,6 +39,7 @@ typedef struct {
     size_t capacity;
     size_t offset;
     size_t alignment;
+    bool owns_buffer;  /* true if we allocated the buffer, false if external */
 } evocore_arena_t;
 
 /**

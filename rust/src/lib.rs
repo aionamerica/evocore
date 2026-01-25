@@ -129,6 +129,7 @@ extern "C" {
 
     // Utility
     pub fn evocore_context_count(system: *const evocore_context_system_t) -> usize;
+    pub fn evocore_context_get_param_count(system: *const evocore_context_system_t) -> usize;
 }
 
 /// Simple Rust wrapper for EvoCore context system
@@ -308,9 +309,12 @@ impl EvoCoreContextSystem {
                 return Err("Failed to load context system".to_string());
             }
 
+            // Get param_count from loaded system instead of hardcoding
+            let param_count = evocore_context_get_param_count(system);
+
             Ok(Self {
                 inner: NonNull::new(system).expect("loaded system was null"),
-                param_count: 5, // Default - would need to be stored in file
+                param_count,
             })
         }
     }
